@@ -6,7 +6,7 @@ The existing Python application is Streamlit and does **not** expose this dashbo
 
 ## Units and interval rules
 
-- Every timestamp is ISO 8601 with an explicit timezone (`Z` or an offset).
+- Every timestamp is ISO 8601 with seconds and an explicit timezone (`Z` or an offset). Fractional seconds are optional and limited to three digits. For Python serialization, use `value.isoformat(timespec="seconds")` or `value.isoformat(timespec="milliseconds")`; the default six-digit microsecond representation is rejected by the current validator.
 - The site display timezone is `Asia/Qyzylorda` (UTC+05:00). `date` is the selected site's calendar day, independent of the user's browser timezone.
 - Each turbine has exactly 24 history rows, sorted from local 00:00 through 23:00. `time` labels the **start** of the one-hour interval `[time, time + 1 hour)`. Pad missing values with `null`; do not remove intervals or replace missing data with zero.
 - Power is an hourly mean in the source's normalized units, displayed as `n.u.`. A sum of hourly means multiplied by one hour is displayed as `n.u.·h`. It is not MW or MWh. No capacity, normalization range, farm aggregation, or conversion to physical energy is assumed.

@@ -35,6 +35,38 @@ Site IDs `turbine_1` and `turbine_2` refer to the coordinates in
 been matched to real SCADA IDs. Keep the supplied site coordinates; NOAA's sampled
 grid coordinate is separate weather-source metadata.
 
+The existing Streamlit fixture uses IDs `T1` and `T2`; the dashboard requires
+`turbine_1` and `turbine_2`. Map IDs explicitly using reviewed source metadata,
+never by array order or by assuming the names identify the same physical sites.
+
+## Upstream field mapping
+
+These are candidate source fields, subject to confirmed units, interval meaning,
+quality flags, availability, and turbine mapping:
+
+| Dashboard field                                                        | Existing Python source                                                         | Adapter requirement                                                                                              |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `history[].time`                                                       | `Observation.observed_at`, `ForecastRow.valid_time`, `WeatherPoint.valid_time` | Resolve interval-start/end semantics before joining; output each selected local hour exactly once                |
+| `actualPower`                                                          | `Observation.power_norm`                                                       | Establish hourly mean semantics; retain missing/invalid values as null                                           |
+| `actualTemperature`, `actualWindSpeed`                                 | `Observation.temp_c`, `Observation.wind_ms`                                    | Use original observations available by the snapshot; do not fill with forecast weather                           |
+| `actualWindDirection`                                                  | No field in the current `Observation` contract                                 | Leave null until an evidenced source or agreed contract extension exists                                         |
+| `predictedPower`                                                       | `ForecastRow.prediction`                                                       | Select an eligible original issue and verify target/interval semantics                                           |
+| `predictedTemperature`, `predictedWindSpeed`, `predictedWindDirection` | `WeatherPoint.temp_c`, `wind_ms`, `wind_direction_deg`                         | Use the corresponding eligible weather bundle; retain nulls and normalize direction convention                   |
+| `status`                                                               | No operational-status field in these contracts                                 | Obtain status evidence; if unavailable, agree an explicit unknown-status extension rather than inventing a state |
+| `events[].predictedEnergy`                                             | Numerical forecast rows over each event window                                 | Integrate hourly means under the documented units; return null when a complete event estimate is unavailable     |
+
+Use `Observation.available_at`, forecast issue times, and weather provenance in
+the server audit. Never treat `observed_at` alone as proof that a reading was
+available at a simulated issue time. Serialize timestamps with seconds or
+milliseconds precision as required by `API.md`; Python's default microsecond
+precision is not accepted by the current browser validator.
+
+The endpoint currently selects only the current local day and yesterday, not an
+arbitrary archived date. January/February artifacts cannot be presented as
+current data by changing their timestamps. If historical inspection is needed,
+agree and implement an explicit date-selection extension in the API, UI, and
+validation tests. Otherwise report the missing current inputs honestly.
+
 ## Suggested implementation order
 
 1. **Confirm inputs and semantics.** Obtain the original SCADA file and the

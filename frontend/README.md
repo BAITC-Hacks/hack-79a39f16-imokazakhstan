@@ -5,6 +5,9 @@ today/yesterday comparisons, observed and predicted time series, and a 48-hour
 weather outlook. The default dataset is explicitly synthetic. Its illustrative
 values and weather impacts are not measurements or operational forecasts.
 
+AI agents should start with [`AGENTS.md`](AGENTS.md) for the code map, required
+reading, behavioral constraints, and a reusable integration-agent prompt.
+
 ## Run with Docker
 
 Install Docker Engine or Docker Desktop with Docker Compose v2. From the repository root:
