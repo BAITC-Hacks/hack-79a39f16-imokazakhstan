@@ -1,0 +1,14 @@
+# Only the existing app and its Python package enter this build context.
+**
+!pyproject.toml
+!README.md
+!app.py
+!src
+!src/**
+src/**/__pycache__
+src/**/*.pyc
+src/**/*.egg-info
+src/wind_forecast/models/artifacts/**
+**/.env
+**/.env.*
+**/.git

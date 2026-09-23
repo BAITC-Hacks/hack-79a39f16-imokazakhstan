@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+test-results
+playwright-report
+.qa
+.git
+.env
+.env.*
+*.log
+README.md
+compose.yaml
+Dockerfile.backend*
