@@ -1,1 +1,1 @@
--e .[app,openai,weather,ml]
+-e .[app,openai,weather,ml,local]

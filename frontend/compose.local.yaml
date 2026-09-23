@@ -1,0 +1,52 @@
+# docker compose -f frontend/compose.yaml -f frontend/compose.local.yaml --profile local up --build -d
+services:
+  frontend:
+    environment:
+      DASHBOARD_DATA_MODE: api
+      DASHBOARD_API_UPSTREAM: http://api:8000
+      DASHBOARD_DEFAULT_DATE: '2026-02-01'
+    depends_on:
+      api:
+        condition: service_healthy
+  api:
+    profiles: [local]
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile.backend
+    command: [python, -m, wind_forecast.agent.dashboard, --config, examples/local_request.json, --host, '0.0.0.0', --port, '8000']
+    volumes:
+      - ../data/raw:/app/data/raw:ro
+      - ../src/wind_forecast/models/artifacts/deploy-final:/app/src/wind_forecast/models/artifacts/deploy-final:ro
+      - ../src/wind_forecast/models/artifacts/wind-audit:/app/src/wind_forecast/models/artifacts/wind-audit:ro
+      - local-runs:/app/runs
+      - local-cache:/app/data/cache
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=2)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 1g
+  worker:
+    profiles: [local]
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile.backend
+    command: [python, scripts/watch_forecast.py, --config, examples/local_request.json, --state-dir, runs/local-monitor, --interval-seconds, '300']
+    volumes:
+      - ../data/raw:/app/data/raw:ro
+      - ../src/wind_forecast/models/artifacts/deploy-final:/app/src/wind_forecast/models/artifacts/deploy-final:ro
+      - ../src/wind_forecast/models/artifacts/wind-audit:/app/src/wind_forecast/models/artifacts/wind-audit:ro
+      - local-runs:/app/runs
+      - local-cache:/app/data/cache
+    healthcheck:
+      test: [CMD, python, -c, "from pathlib import Path; import time; p=Path('runs/local-monitor/state.json'); assert p.exists() and time.time()-p.stat().st_mtime<900"]
+      interval: 60s
+      start_period: 60s
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 1g
+volumes:
+  local-runs:
+  local-cache:

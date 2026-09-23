@@ -19,3 +19,8 @@ src/wind_forecast/models/artifacts/**
 **/.env.*
 **/secrets.toml
 **/.git
+
+!scripts
+!scripts/**
+!examples
+!examples/**

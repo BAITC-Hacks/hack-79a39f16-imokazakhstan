@@ -69,6 +69,8 @@ def default_weather_probe(config: RunConfig) -> dict:
 NOAA uses small source listings. Local bundles are selected by the same strict
 eligibility rules as the forecast run. Custom providers must expose probe.
 """
+    if config.weather_source == "none":
+        return {"provider": "none", "mode": "history-only"}
     if config.weather_source == "mock":
         return {"provider": "synthetic_mock", "version": 1}
     if config.weather_source == "noaa_gfs":
@@ -202,6 +204,13 @@ checks. Do not share a state directory between different intended monitors.
         model = {key: _file_identity(value) for key, value in (
             ("artifact", config.model_path), ("metadata", config.model_metadata_path)
         ) if value}
+        if config.model_kind == "local_history":
+            from wind_forecast.agent.local_models import ARTIFACTS
+            model = {name: _file_identity(str(path)) for name,path in {
+                "power": config.model_path or ARTIFACTS / "deploy-final/catboost_neighbor.cbm",
+                "power_metadata": config.model_metadata_path or ARTIFACTS / "deploy-final/catboost_neighbor.metadata.json",
+                "wind": config.wind_model_path or ARTIFACTS / "wind-audit/wind_model.joblib",
+                "wind_metadata": config.wind_metadata_path or ARTIFACTS / "wind-audit/metadata.json"}.items()}
         inline_notes = config_dict.pop("operational_notes")
         notes = ((_file_identity(config.operational_notes_path)
                   if config.operational_notes_path else inline_notes) if config.jev_enabled else None)
@@ -237,8 +246,11 @@ checks. Do not share a state directory between different intended monitors.
                     if self.rolling_live:
                         if config.mode != "live":
                             raise ValueError("rolling_live requires mode=live")
-                        config = replace(config, issue_time=checked_at.replace(
-                            minute=0, second=0, microsecond=0), observation_policy="available")
+                        issue = checked_at.replace(minute=0, second=0, microsecond=0)
+                        if config.model_kind == "local_history":
+                            issue = issue.replace(hour=1)  # 06:00 UTC+5, daily schedule
+                            if issue > checked_at: issue -= timedelta(days=1)
+                        config = replace(config, issue_time=issue, observation_policy="available")
                     components = self._components(config)
                     signature = _digest(components)
                     previous = state.get("successful_components")

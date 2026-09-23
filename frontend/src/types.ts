@@ -1,5 +1,5 @@
 /** Display contract only. The Python shared contracts remain authoritative upstream. */
-export type Period = 'today' | 'yesterday';
+export type Period = 'today' | 'yesterday' | 'date';
 
 export interface RuntimeConfig {
   dataMode: 'demo' | 'api';
@@ -7,6 +7,7 @@ export interface RuntimeConfig {
   apiUrl: string;
   /** Optional navigation link to the existing Python application. */
   backendUrl: string;
+  defaultDate?: string;
 }
 
 export interface HistoryPoint {
@@ -27,7 +28,7 @@ export interface Turbine {
   name: string;
   latitude: number;
   longitude: number;
-  status: 'operating' | 'attention' | 'offline';
+  status: 'operating' | 'attention' | 'offline' | 'unknown';
   history: HistoryPoint[];
 }
 
@@ -46,13 +47,14 @@ export interface WeatherEvent {
 
 export interface DashboardData {
   schemaVersion: 1;
-  provenance: 'synthetic' | 'verified_original';
+  provenance: 'synthetic' | 'verified_original' | 'local_scada';
   generatedAt: string;
   timezone: string;
   date: string;
   period: Period;
   turbines: Turbine[];
   events: WeatherEvent[];
+  forecast?: { issueTime: string; modelId: string; windModelId: string; horizonHours: number; runId: string; latestObservation: string; note: string };
 }
 
 export interface TurbineSummary {
