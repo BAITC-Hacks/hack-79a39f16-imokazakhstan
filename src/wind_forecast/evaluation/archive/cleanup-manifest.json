@@ -1,0 +1,256 @@
+{
+  "scope": "Person 2 only; local artifacts and experimental code",
+  "kept_models": [
+    "catboost_neighbor",
+    "wind_extratrees",
+    "existing_empirical_power_curve"
+  ],
+  "source_commit_before_cleanup": "cc5581e",
+  "total_removed_bytes": 1257195389,
+  "removed": [
+    {
+      "path": "src/wind_forecast/models/artifacts/neural-purged",
+      "bytes": 1229221
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/cleanup-20260923.json",
+      "bytes": 1175,
+      "sha256": "5656e704751d1a02d00586b215459061bbc2732fa8bfebb872ae1bcf5c7c10c2"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/final-comparison",
+      "bytes": 6280881
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/history-48h-v3",
+      "bytes": 42640382
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/monthly-202502-202601-v2",
+      "bytes": 9245824
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/gpu-results.tar.gz",
+      "bytes": 84640780,
+      "sha256": "56c0014a5fac1c0126665b1461f6e73aa1416f2696d8791bc4a04f23463ede11"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/brev-price.json",
+      "bytes": 120,
+      "sha256": "1980681d8876fecd0e957b5774c0e09b629f927892a0c0db0e7da17a0b9b59d4"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/remote-source.tar",
+      "bytes": 6123520,
+      "sha256": "171a7f275789a6d9374dd54026cafae28fbfe6b1564f614d1f52979678d8163f"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/gpu-final",
+      "bytes": 90556397
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/extended-dataset.joblib",
+      "bytes": 5925097,
+      "sha256": "08a46d39853212247ff732014b5d44aa5cc1ed315a1759a627234868492ba9b1"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/extended-v2",
+      "bytes": 39079112
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/cost-estimate-v1",
+      "bytes": 16562
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/gpu-backup",
+      "bytes": 1628653
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/scada-baseline-v1",
+      "bytes": 16006
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/pretrained-revisions.json",
+      "bytes": 403,
+      "sha256": "14f40468ba3be446c525c11c588cbe88ad83d6e083ae2c1f8a24990438345657"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/wind-power-models-final.zip",
+      "bytes": 9659563,
+      "sha256": "32a3ce4f53d2690098c96778d2abdd7ab12703dc2cd9d33f5f104e8445eedd38"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/pretrained",
+      "bytes": 624305706
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/extended-env",
+      "bytes": 334728046
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/deploy-final/patch_transformer.example-20260201.json",
+      "bytes": 2660,
+      "sha256": "85b1a929cd70b3c628ca59833e74d7ce335e025646ab4a1b5cd6335a5142f677"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/deploy-final/patch_transformer.metadata.json",
+      "bytes": 5355,
+      "sha256": "27ad27b3c2235c54701e9e32552d3c614293b411317de8d67973ff6f50b63c1e"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/deploy-final/catboost_neighbor.example-20260201.json",
+      "bytes": 2673,
+      "sha256": "b1069fdb732b163d22b1ca9ae0642e8474df0544e0c8ad9ea7f5d520dd39bee4"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/deploy-final/local-validation.json",
+      "bytes": 601,
+      "sha256": "b8cb316cbbc3ae86e1097f0223aa57d0947647d4fa9cfe6d8e8aeb14d64c4874"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/deploy-final/selection.json",
+      "bytes": 599,
+      "sha256": "58d19b0bc1811ec08a4c45f9573655026936062c01d1960c1ba2431f94e8ccf5"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/deploy-final/patch_transformer.pt",
+      "bytes": 317162,
+      "sha256": "e29630c9aded65c5f422776bb4edea3b1098fe991007e12c198b218bcf29ee15"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/wind-audit/report.json",
+      "bytes": 5719,
+      "sha256": "c0c9de9538df242b2357cdfe7c2332d8db9fa37c9e2e26311f4002dec853f7aa"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/wind-audit/predictions.npz",
+      "bytes": 427471,
+      "sha256": "8906edb3b05edfe4a4b8dd9599ded79ccb283626d3162cba13c8ed7549c6e057"
+    },
+    {
+      "path": "src/wind_forecast/models/artifacts/wind-audit/example-20260201.json",
+      "bytes": 2555,
+      "sha256": "2e5a73e8aee51923a4223befeae3b40d5a86a8ed1ad53b61dae61181647f490f"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/final_fit.py",
+      "bytes": 2895,
+      "sha256": "851ee5f9ae29966cd976179e24015719d7fb162b8b613c9be31ac9891ae337d1"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/check_wind.py",
+      "bytes": 2918,
+      "sha256": "710bb747564018c03221d0761faa3b333a35a21f4f843a7baeafb35d824e78ef"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/summarize_extended.py",
+      "bytes": 17669,
+      "sha256": "d9b1fbb032a095ca907cb7503b4e63af7351bafdf8a208bea54054bd791448f7"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/monthly_replay.py",
+      "bytes": 18145,
+      "sha256": "fd17353dec0d59d8533e001fe1a85cbac43faccda873e96c7f2cc64e60546df1"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/history_experiment.py",
+      "bytes": 16943,
+      "sha256": "1416ba982383f3dc903230ce503a53e0c5a1dd21724dd5f08285f72828356811"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/benchmark_cost.py",
+      "bytes": 12192,
+      "sha256": "e789de87324037427e29e731508e1a715545e70db15caa2e3d143f48af32c6dc"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/remote_gpu_suite.py",
+      "bytes": 2699,
+      "sha256": "03819c21ed0afd927cd52f353a02a4cd0b3de14fed63e1068365384b5b1c5835"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/extended_replay.py",
+      "bytes": 15581,
+      "sha256": "c32dec6168d2da8a17a735f2598da34e108a735c3782b660cbe2ed77a65c59a8"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/remote_setup.sh",
+      "bytes": 769,
+      "sha256": "4382f836226ffe48f445cae2f81cf128cc4fc9c3efe275fb5ae5d0af4ddd7b35"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/refit_history.py",
+      "bytes": 2997,
+      "sha256": "9b853bc768e839714e0cd5bdf34b598b5b225be5f4be831d831e67c0522d679b"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/verify_deployment.py",
+      "bytes": 2709,
+      "sha256": "fee6333b5421f6f2504e67d760dedcd23a746fa46d289ff6432a14d7bc45091f"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/calibrate_saved.py",
+      "bytes": 1565,
+      "sha256": "7b46162b2536e6ffdd5ed05354332c65b8de2655ad69574b8526f878a0db1e78"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/run_extended_suite.py",
+      "bytes": 3199,
+      "sha256": "9e4a621b1235daae04dc616969f88ca974f2c36260b9871dddbe8e99f192e665"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/summarize_history.py",
+      "bytes": 9618,
+      "sha256": "6f65a4592a3860749e0c277b89731ca4f404357933c8f695fb018051f5e8e769"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/run_history.py",
+      "bytes": 2499,
+      "sha256": "28f4c69a775f0c5be70c57816f3c27686104a74788007b44dfea7f82ef6f764e"
+    },
+    {
+      "path": "src/wind_forecast/models/sequence_forecast.py",
+      "bytes": 5768,
+      "sha256": "b8d3293fea4df16bcc2afb5fd64addb28fef0eea8b52cc4edfeca3d4c46a056e"
+    },
+    {
+      "path": "src/wind_forecast/models/history_predictor.py",
+      "bytes": 6100,
+      "sha256": "473005370ad5ff324b7df5248738b9041a48c8280ce04c4e647965083770f41a"
+    },
+    {
+      "path": "src/wind_forecast/models/requirements-extended.txt",
+      "bytes": 258,
+      "sha256": "09e9033a4998ba1fe3693ea28d2583d691da4cb38a3c9b19123f20b5f70dcf7e"
+    },
+    {
+      "path": "src/wind_forecast/models/requirements-history.txt",
+      "bytes": 206,
+      "sha256": "12d86b3120011cd2689b552005108c90c99d9d06cb3430cf495d4bc446545d91"
+    },
+    {
+      "path": "src/wind_forecast/models/test_sequence_forecast.py",
+      "bytes": 1727,
+      "sha256": "386f4b7f21143866010542595e112afb9610e69106f70639afca547fbe6ed0d9"
+    },
+    {
+      "path": "src/wind_forecast/models/test_monthly_replay.py",
+      "bytes": 1766,
+      "sha256": "7c4b8589a2583ce51a25bf65fc958aa325db776099dea4713e605e11dc9d0172"
+    },
+    {
+      "path": "src/wind_forecast/evaluation/__pycache__",
+      "bytes": 148549
+    },
+    {
+      "path": "src/wind_forecast/models/__pycache__",
+      "bytes": 76374
+    }
+  ],
+  "brev_action": "none; retained by user request",
+  "validation": {
+    "retained_model_unit_tests": 8,
+    "real_power_and_wind_inference": "passed",
+    "site_tests": 46,
+    "status": "passed"
+  }
+}

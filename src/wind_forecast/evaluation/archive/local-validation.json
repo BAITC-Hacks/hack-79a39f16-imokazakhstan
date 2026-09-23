@@ -1,0 +1,24 @@
+[
+  {
+    "model": "catboost_neighbor",
+    "seconds_full_features_and_prediction": 0.01475766603834927,
+    "bytes": 1286984,
+    "rows": 96,
+    "future_invariance": true,
+    "availability_filter": true,
+    "training_cutoff": true,
+    "hash_verification": true,
+    "interval_ordering": true
+  },
+  {
+    "model": "patch_transformer",
+    "seconds_full_features_and_prediction": 0.02698299998883158,
+    "bytes": 317162,
+    "rows": 96,
+    "future_invariance": true,
+    "availability_filter": true,
+    "training_cutoff": true,
+    "hash_verification": true,
+    "interval_ordering": true
+  }
+]

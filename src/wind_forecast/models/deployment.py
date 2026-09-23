@@ -18,16 +18,11 @@ class SavedPredictor:
         path = Path(model_path)
         if hashlib.sha256(path.read_bytes()).hexdigest() != metadata['artifact_sha256']:
             raise ValueError('Artifact hash mismatch')
-        if self.kind.startswith('catboost'):
-            from catboost import CatBoostRegressor
-            self.model = CatBoostRegressor()
-            self.model.load_model(str(path))
-        else:
-            import torch
-            from wind_forecast.models.sequence_forecast import SequenceRegressor
-            self.model = SequenceRegressor(self.kind, width=metadata['width'])
-            self.model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
-            self.model.eval()
+        if self.kind != 'catboost_neighbor':
+            raise ValueError('Only the selected catboost_neighbor artifact is supported')
+        from catboost import CatBoostRegressor
+        self.model = CatBoostRegressor()
+        self.model.load_model(str(path))
 
     def predict_frames(self, frames, issue, turbine_ids=('T1','T2')):
         issue = pd.Timestamp(issue)
@@ -38,7 +33,7 @@ class SavedPredictor:
             raise ValueError('Model is validated for daily 06:00 UTC+5 issues')
         if issue < pd.Timestamp(self.metadata['trained_through']):
             raise ValueError('Model training cutoff exceeds issue')
-        xs, sequences = [], []
+        xs = []
         for tid in turbine_ids:
             if tid not in ('T1','T2'):
                 raise ValueError('Only T1 and T2 are trained')
@@ -47,16 +42,8 @@ class SavedPredictor:
             if past.power.notna().sum() < 18:
                 raise ValueError('At least 18 observed power hours in last 24 required')
             own = np.r_[features(frames[k], issue)[0], k]
-            xs.append(np.r_[own,features(frames[1-k],issue)[0]] if self.kind=='catboost_neighbor' else own)
-            if not self.kind.startswith('catboost'):
-                from wind_forecast.models.sequence_forecast import sequence_at
-                sequences.append(sequence_at(frames,issue,k,neighbor=self.kind=='graph_gru'))
-        x = np.asarray(xs)
-        if self.kind.startswith('catboost'):
-            p = self.model.predict(x)
-        else:
-            from wind_forecast.models.sequence_forecast import predict_sequence
-            p = predict_sequence(self.model,np.asarray(sequences),x[:,-3:].astype(np.float32),'cpu')
+            xs.append(np.r_[own, features(frames[1-k], issue)[0]])
+        p = self.model.predict(np.asarray(xs))
         if not np.isfinite(p).all():
             raise ValueError('Nonfinite prediction')
         return np.clip(p,0,1)
