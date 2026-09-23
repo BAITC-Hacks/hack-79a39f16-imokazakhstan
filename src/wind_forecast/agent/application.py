@@ -181,6 +181,9 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
     """
     if isinstance(config, dict):
         config = RunConfig.from_dict(config)
+    if config.model_kind == "local_history":
+        from wind_forecast.agent.local_models import run_local_forecast
+        return run_local_forecast(config, datasets=datasets)
     request = config.request()
     trace = WorkflowTrace(request.request_id)
     report = {"assumptions": {"source_timezone":config.source_timezone,
@@ -230,6 +233,9 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
                 datasets = datasets if datasets is not None else load_datasets(config)
             if any(t not in datasets for t in config.turbine_ids):
                 raise ValueError("provide an observation dataset for each selected turbine")
+            from wind_forecast.agent.local_models import reject_synthetic_datasets
+            observation_synthetic = reject_synthetic_datasets(datasets, config.mode)
+            report["observation_provenance"] = {"is_synthetic": observation_synthetic}
             all_rows = [r for t in config.turbine_ids for r in datasets[t].observations]
             _validate_observations(all_rows, request.turbine_ids)
             observations = [r for r in all_rows if r.observed_at <= config.training_limit
@@ -268,7 +274,7 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
                     "observation_data_hash": training_hash, "features": list(predictor.features),
                     "hyperparameters": predictor.training_report["hyperparameters"],
                     "scikit_learn_version": predictor.training_report["scikit_learn_version"],
-                    "target_units": "normalized_active_power", "trained_on_synthetic": config.mode == "fixture",
+                    "target_units": "normalized_active_power", "trained_on_synthetic": report["observation_provenance"]["is_synthetic"],
                     "kind": "histogram gradient boosting fitted for this issue"}
                 report["model_validation"] = predictor.training_report
                 warnings.append("ML validation uses measured weather; archived-forecast accuracy needs separate replay evaluation.")
@@ -276,7 +282,7 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
                 predictor = EmpiricalPowerCurve().fit(observations)
                 model_metadata = {"model_id":predictor.model_id,"trained_through":max(r.observed_at for r in observations).isoformat(),
                     "training_data_hash":training_hash,"features":["wind_ms","turbine_id"],
-                    "target_units":"normalized_active_power","trained_on_synthetic":config.mode=="fixture",
+                    "target_units":"normalized_active_power","trained_on_synthetic":report["observation_provenance"]["is_synthetic"],
                     "kind":"empirical baseline fitted for this issue"}
                 warnings.append("Empirical baseline: coarse weather-grid wind differs from measured turbine wind; validate/calibrate before claiming accuracy.")
             if not model_metadata or model_metadata.get("model_id") != predictor.model_id:
