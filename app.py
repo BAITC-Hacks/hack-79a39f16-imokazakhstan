@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,7 +22,7 @@ from wind_forecast.agent.presentation import (
     forecast_frame,
     hourly_table,
 )
-from wind_forecast.agent.settings import RunConfig, runtime_settings
+from wind_forecast.agent.settings import RunConfig, parse_time, runtime_settings
 
 st.set_option("client.toolbarMode", "viewer")
 st.set_page_config(page_title="WindScope · Wind power forecast", page_icon="🌬️", layout="wide")
@@ -69,13 +69,17 @@ def fingerprint(value):
 
 def error_text(error):
     message = str(error)
-    key = runtime.get("api_key", "")
-    return message.replace(key, "[redacted]") if key else message
+    for name in ("api_key", "typesafe_api_key"):
+        key = runtime.get(name, "")
+        if key:
+            message = message.replace(key, "[redacted]")
+    return message
 
 
 runtime = runtime_settings()
 team_ready = all(runtime.get(key) for key in ("model_factory", "model_path", "model_metadata_path"))
 ai_ready = bool(runtime["api_key"] and runtime["model"])
+jev_ready = bool(runtime.get("typesafe_api_key"))
 local_paths = {"T1": ROOT / "data/raw/turbine_1.csv", "T2": ROOT / "data/raw/turbine_2.csv"}
 
 st.markdown('<div class="eyebrow">WINDSCOPE / HACKALEM</div>', unsafe_allow_html=True)
@@ -124,6 +128,8 @@ with st.container(border=True):
     turbines = {"Both turbines": ("T1", "T2"), "Turbine 1": ("T1",), "Turbine 2": ("T2",)}[
         turbine_choice
     ]
+    forecast_issue = (datetime.now(UTC).replace(minute=0, second=0, microsecond=0) if live
+                      else datetime.combine(issue_date, datetime.min.time(), tzinfo=UTC).replace(hour=issue_hour))
     uploads = {}
     if real_data:
         missing_local = [t for t in turbines if not local_paths[t].is_file()]
@@ -148,6 +154,7 @@ with st.container(border=True):
         "Etc/GMT-6": "UTC+06:00 (fixed)",
         "Asia/Almaty": "Asia/Almaty (historical clock changes)",
     }
+    operational_notes, note_problem = [], ""
     with st.expander("Optional settings"):
         if real_data:
             st.markdown("**Measurement timestamps**")
@@ -225,6 +232,38 @@ with st.container(border=True):
             st.caption(
                 "Optional: set OPENAI_API_KEY and OPENAI_MODEL in .env to enable the agent. Forecasts work without it."
             )
+        use_jev = st.checkbox(
+            "Jev: review the next 3 hours", key="use_jev", value=False,
+            disabled=not (jev_ready and real_data),
+            help="Reviews operational concerns and suggests an immediate next step after the power forecast.",
+        ) and real_data and jev_ready
+        if not jev_ready:
+            st.caption("Optional: set TYPESAFE_API_KEY in .env to enable Jev operational reviews.")
+        elif not real_data:
+            st.caption("Jev reviews are available with Your measurements. The demo stays offline.")
+        if use_jev:
+            st.caption("Sends a small forecast summary and your optional note to TypeSafe. A separate TypeSafe API request is used per new run.")
+            note = st.text_area(
+                "Operator note (optional)", key="operator_note", max_chars=600,
+                placeholder="Example: T1 is scheduled for maintenance during the next two hours.",
+                help="Write in English or Russian. Include timing, affected turbines and whether the issue is active or resolved.",
+            )
+            if note.strip():
+                note_scope = st.multiselect("Note applies to", turbines, default=list(turbines),
+                                            format_func=TURBINE_NAMES.get, key="note_scope")
+                a, b = st.columns(2)
+                note_at = a.text_input("Note available at (UTC)", value=forecast_issue.isoformat(), key="note_at")
+                note_until = b.text_input("Note valid until (UTC)",
+                    value=(forecast_issue + timedelta(hours=3)).isoformat(), key="note_until")
+                st.caption("Use actual availability and expiry times. Historical notes must have been known by the forecast issue time; these times are your declaration.")
+                try:
+                    available, until = parse_time(note_at), parse_time(note_until)
+                    if not note_scope or not available <= forecast_issue < until:
+                        raise ValueError("note_window")
+                    operational_notes = [{"text": note.strip(), "turbine_ids": note_scope,
+                        "available_at": available.isoformat(), "valid_until": until.isoformat()}]
+                except (ValueError, TypeError):
+                    note_problem = "Choose note turbines and valid UTC times: available by the forecast issue, expiring after it."
 
     acknowledged = False
     if real_data:
@@ -252,6 +291,8 @@ with st.container(border=True):
         )
 
     problems = []
+    if note_problem:
+        problems.append(note_problem)
     if real_data:
         if any(uploads[t] is None and not local_paths[t].is_file() for t in turbines):
             problems.append("Add a measurement CSV for each selected turbine.")
@@ -280,6 +321,9 @@ with st.container(border=True):
             if team_model
             else None,
             "ai": bool(use_ai and ai_ready),
+            "jev": use_jev,
+            "jev_model": runtime.get("typesafe_model", "jev-1.13.0") if use_jev else None,
+            "operational_notes": operational_notes,
             "sources": {
                 t: hashlib.sha256(uploads[t].getvalue()).hexdigest()
                 if uploads[t] is not None
@@ -354,9 +398,7 @@ if generate:
                 else ""
             )
             config = RunConfig(
-                issue_time=datetime.now(UTC).replace(minute=0, second=0, microsecond=0) if live else datetime.combine(issue_date, datetime.min.time(), tzinfo=UTC).replace(
-                    hour=issue_hour
-                ),
+                issue_time=forecast_issue,
                 turbine_ids=turbines,
                 horizon_hours=horizon,
                 mode=("live" if live else "historical") if real_data else "fixture",
@@ -374,6 +416,9 @@ if generate:
                 model_path=runtime["model_path"] if team_model else "",
                 model_metadata_path=runtime["model_metadata_path"] if team_model else "",
                 controller="openai" if use_ai and ai_ready else "deterministic",
+                jev_enabled=use_jev,
+                jev_model=runtime.get("typesafe_model", "jev-1.13.0") if use_jev else "jev-1.13.0",
+                operational_notes=tuple(operational_notes),
                 output_root=str(ROOT / "runs/application"),
                 cache_dir=str(ROOT / "data/cache/weather"),
             )
@@ -516,6 +561,43 @@ else:
             lineage = run.report.get("lineage", {})
             if lineage.get("supersedes"):
                 st.caption(f"Updated forecast: {lineage.get('changed_prediction_count', 0)} values changed from the previous version.")
+        review = run.report.get("operations")
+        if review:
+            with st.container(border=True):
+                st.subheader("Jev · Next 3 hours")
+                if review["state"] == "completed":
+                    context = review["input"]["state"]
+                    st.caption(f"As of {context['issue_time']} · through {context['window_end']} · {review['model']}")
+                    for turbine, advisory in review["by_turbine"].items():
+                        st.markdown(f"**{TURBINE_NAMES[turbine]} · {advisory['condition_label']}**")
+                        if advisory["status"] == "needs_review":
+                            st.warning(advisory["recommendation"])
+                        else:
+                            st.info(advisory["recommendation"])
+                        for flag in advisory["computed_flags"]:
+                            st.write(flag)
+                        if advisory["uncertain"]:
+                            st.caption("Jev's interpretation is uncertain. Review the evidence before acting.")
+                    with st.expander("Review evidence and probabilities"):
+                        st.caption(review["message"] + " Routing thresholds are provisional and have not been calibrated on this site's incidents.")
+                        for turbine, advisory in review["by_turbine"].items():
+                            st.write(f"{TURBINE_NAMES[turbine]}: probability that review is warranted {advisory['attention_probability']:.0%}; action confidence {advisory['action_confidence']:.0%}.")
+                            evidence = context["turbines"][turbine]
+                            st.dataframe([{
+                                "Hour ending (UTC)": row["hour_ending"],
+                                "ML power (normalized)": row["predicted_power"],
+                                "Forecast wind (m/s)": row["forecast_wind_ms"],
+                                "Forecast temperature (°C)": row["forecast_temperature_c"],
+                            } for row in evidence["next_three_hours"]], hide_index=True, width="stretch")
+                            for note in evidence["operator_notes"]:
+                                st.text(f"{note['id']} (operator supplied): {note['text']}")
+                            if not evidence["operator_notes"]:
+                                st.caption("No eligible operator notes were supplied for this turbine.")
+                        excluded = context["excluded_notes"]
+                        if any(excluded.values()):
+                            st.caption("Excluded notes: " + ", ".join(f"{key}: {value}" for key, value in excluded.items()))
+                else:
+                    st.info(review["message"])
         if run.report.get("controller", {}).get("completed"):
             with st.expander("AI explanation"):
                 st.markdown(run.summary)
@@ -543,7 +625,9 @@ else:
         weather = run.weather
         if run.state == "completed":
             st.caption(
-                "Weather retrieved → Data prepared → Model trained → Inputs checked → Power predicted → Results analysed → Forecast saved"
+                "Weather retrieved → Data prepared → Model trained → Inputs checked → Power predicted → Results analysed"
+                + (" → Jev operational review" if run.report.get("operations") else "")
+                + " → Forecast saved"
             )
         controller_names = {
             "deterministic": "Python workflow",

@@ -202,8 +202,12 @@ checks. Do not share a state directory between different intended monitors.
         model = {key: _file_identity(value) for key, value in (
             ("artifact", config.model_path), ("metadata", config.model_metadata_path)
         ) if value}
+        inline_notes = config_dict.pop("operational_notes")
+        notes = ((_file_identity(config.operational_notes_path)
+                  if config.operational_notes_path else inline_notes) if config.jev_enabled else None)
         return {"configuration": _digest(config_dict), "issue_time": issue_time,
                 "measurements": _digest(data), "model": _digest(model),
+                "operational_notes": _digest(notes),
                 "weather": _digest(self.weather_probe(config))}
 
     def poll(self, config: RunConfig | dict, *, now: datetime | None = None) -> MonitorPoll:
@@ -243,6 +247,7 @@ checks. Do not share a state directory between different intended monitors.
                     else:
                         labels = {"configuration": "configuration_changed", "issue_time": "issue_time_changed",
                                   "measurements": "measurements_changed", "model": "model_changed",
+                                  "operational_notes": "operational_notes_changed",
                                   "weather": "weather_updated"}
                         reasons = tuple(labels[key] for key, value in components.items()
                                         if previous.get(key) != value)

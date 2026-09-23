@@ -108,6 +108,8 @@ the turbines' present operating conditions.
   and a labeled power axis. Each point represents the hour ending at that time.
 - **Summary:** each turbine's average and peak predicted normalized power.
 - **Hourly values:** the same predictions in a compact table.
+- **Jev · Next 3 hours** (optional): operating concerns, supporting evidence and
+  an immediate review recommendation for each turbine.
 - **Forecast CSV:** numerical predictions with turbine, issue time, valid time,
   lead hours, and optional model quantiles.
 - **Full report ZIP:** forecast, input assumptions, weather evidence, workflow
@@ -148,6 +150,24 @@ from the numerical model. Each run permits at most eight API calls and 900 outpu
 tokens per call. API failures fall back to Python. Keep `.env` out of Git.
 NVIDIA Brev and FourCastNet are optional model-team integrations.
 The controller uses the [Responses API function-calling interface](https://developers.openai.com/api/docs/guides/function-calling).
+
+### Jev: immediate operational review
+
+Set `TYPESAFE_API_KEY` in the local `.env`, then select **Your measurements →
+Optional settings → Jev: review the next 3 hours**. Add an optional operator note
+with its availability/expiry times, and generate the forecast. Read the **Jev ·
+Next 3 hours** card below the result analysis.
+
+Jev interprets reports of maintenance, curtailment, icing concerns or faulty
+measurements and suggests what to review. The ML model produces the power values.
+Jev works without OpenAI and needs no additional Python package. Each enabled
+real run uses one TypeSafe request; demo runs stay offline. A service failure
+leaves the numerical forecast available. The full ZIP includes `operations.json`
+with inputs, decisions, probabilities, model version and usage.
+
+See [Jev setup, I/O and teammate integration](docs/jev_operations.md), including
+automatic refresh when a notes file changes. Decision thresholds are provisional;
+the displayed probabilities describe evidence judgments, not failure rates.
 
 ## Python and batch use
 

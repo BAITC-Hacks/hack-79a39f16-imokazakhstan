@@ -111,6 +111,21 @@ held-out **measured wind and temperature**. These errors describe regression
 quality; actual 24–48-hour forecast accuracy also depends on weather forecast
 errors and needs a separate historical replay with target measurements.
 
+For an immediate operational review, open **Optional settings** and enable
+**Jev: review the next 3 hours** before generating a real forecast. The host must
+configure `TYPESAFE_API_KEY`. You can add an **Operator note** in English or
+Russian, select its turbines and declare when it became available and expires.
+Notes must have been known by the forecast issue time. Leave the field blank
+to review just the available measurement and forecast context.
+
+Read **Jev · Next 3 hours** under the result analysis: each turbine gets a
+reported condition and suggested review step. Expand **Review evidence and
+probabilities** for its inputs. Uncertain judgments and stale measurements stay
+visible. These are advisory judgments about supplied evidence, not failure-rate
+or power predictions. Jev also runs on automatic forecast updates. An edited web
+note needs **Generate forecast** again; background note feeds are described in
+the [Jev guide](jev_operations.md). This feature works without OpenAI.
+
 Changing request controls leaves the previous forecast visible with a notice.
 Click **Generate forecast** to calculate the new request. Automatic updates also
 refresh results after files or weather change. Each run is saved as a separate
@@ -145,6 +160,7 @@ Most reviewers can leave this panel closed after reviewing the timestamp assumpt
 | Prediction model | Keep Gradient boosting ML, compare the empirical baseline, or select a configured Team model |
 | Measurement history | Permit later observations only when they genuinely existed at the issue time |
 | Use OpenAI agent | Request API orchestration and an explanation when the host has configured credentials |
+| Jev: review the next 3 hours | Interpret operational notes and forecast context; requires a TypeSafe key |
 
 The host configures teammate artifacts and the optional `OPENAI_API_KEY` in
 local `.env` or environment variables. `OPENAI_MODEL` optionally overrides the
@@ -154,6 +170,8 @@ configured; **Use OpenAI agent** is available when a key is present. The local
 controller makes no OpenAI calls; automatic weather retrieval still needs
 internet. A matching local weather JSON allows an offline real-data run.
 The numerical model always calculates the power values.
+The full report ZIP also includes `operations.json` when Jev is enabled. Its
+inputs and decisions remain inspectable even when Jev cannot complete a review.
 
 Batch replay, custom Python providers and the full configuration contract are
 in the [Python/CLI guide](application_io.md). For setup commands, see the

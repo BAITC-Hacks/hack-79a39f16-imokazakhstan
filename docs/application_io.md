@@ -31,6 +31,22 @@ replace forecast values with generated text. The automatic monitor detects a
 changed input, invokes this cycle, and retains the last successful forecast if
 an update fails. See [autonomous_agent.md](autonomous_agent.md).
 
+With `jev_enabled=True`, `inspect_forecast` also performs an independent Jev
+operational review for the next three hours. It returns advisory actions under
+`run.report["operations"]` and saves `operations.json`. The power-model contract
+and forecast CSV stay the same. See [Jev I/O and integration](jev_operations.md).
+
+| Additional configuration | Default | Purpose |
+|---|---|---|
+| `jev_enabled` | `false` | Enable one TypeSafe review per real forecast run |
+| `jev_model` | `jev-1.13.0` | Requested TypeSafe model; returned version is recorded |
+| `operational_notes` | `[]` | Inline notes with `text`, `turbine_ids`, `available_at`, `valid_until` |
+| `operational_notes_path` | empty | JSON notes feed watched for changes; use instead of inline notes |
+
+Set `TYPESAFE_API_KEY` on the host, outside request JSON. The website also reads
+`TYPESAFE_MODEL`; Python/CLI callers set `jev_model` explicitly to override its
+default. The offline fixture always skips Jev.
+
 ## Start with a working fixture
 
 From the repository root after installing the package:

@@ -26,6 +26,9 @@ flowchart TD
     Model --> Control
     Control --> Checks[Coverage, provenance and numerical checks]
     Checks --> Artifacts[Versioned forecast, request, report and trace]
+    Checks --> Jev[Optional Jev operational review]
+    Notes[Eligible operator notes] --> Jev
+    Jev --> Artifacts
     Artifacts --> Result[ApplicationRun returned to caller]
     Result --> Monitor
 ```
@@ -45,6 +48,7 @@ flowchart TD
 | `models/base.py`, `models/power_curve.py` | Shared predictor protocol and empirical baseline |
 | `models/gradient_boosting.py` | Per-turbine ML, chronological holdout, data-quality diagnostics and final fit |
 | `agent/openai_controller.py` | Bounded Responses API orchestration using application-owned tool closures |
+| `agent/jev.py` | Optional three-hour operational review: time-filtered notes, typed Jev judgments and auditable review policy |
 | `agent/artifacts.py` | Versioned forecast CSV, manifest, and trace persistence |
 | `app.py`, `scripts/run_forecast.py` | Interface and command-line/replay entry points |
 
@@ -66,7 +70,10 @@ source wind height stays explicit. See the integration section in `data.md`.
    fit the chosen baseline, or verify/load a teammate model artifact.
 4. Audit provenance and exact time coverage, call the predictor, and analyse
    its returned rows, wind coverage, input freshness and hourly changes.
-5. Save outputs in a new directory and return `ApplicationRun`.
+5. If enabled, call Jev once within `inspect_forecast` to review the next three
+   hours using eligible operator notes and compact forecast/measurement context.
+   Preserve numerical checks and save advisory judgments separately from power.
+6. Save outputs in a new directory and return `ApplicationRun`.
 
 The tools are `fetch_weather`, `prepare_data`, `train_model`, `audit_inputs`,
 `predict_power`, `inspect_forecast`, and `save_forecast`. The deterministic controller executes
@@ -84,8 +91,9 @@ predictor. Optional generated commentary is separately labeled.
 
 `ForecastMonitor.poll` compares a persistent signature of request settings,
 measurement CSV contents, model artifact and metadata, and the eligible weather
-version. NOAA discovery uses object metadata, so unchanged polls avoid GRIB field
-downloads, training and paid OpenAI calls. Live mode advances to the current UTC
+version. With Jev enabled it also hashes an optional operations-note file.
+NOAA discovery uses object metadata, so unchanged polls avoid GRIB field
+downloads, training and paid OpenAI/Jev calls. Live mode advances to the current UTC
 hour; historical mode keeps its issue fixed and never admits later weather.
 
 A changed signature triggers the complete seven-tool cycle. The monitor checks
@@ -98,6 +106,12 @@ replaced atomically; `history.jsonl` records triggers and forecast version paths
 The Streamlit checkbox polls while the browser session is active. The standalone
 `scripts/watch_forecast.py` process continues independently of the browser and
 reloads its config every cycle. Details are in [autonomous_agent.md](autonomous_agent.md).
+
+The Jev adapter uses a fixed TypeSafe endpoint, a bounded request and no immediate
+retries. It never changes `ForecastResult`. Unknown or failed judgments leave an
+explicit unavailable review beside a usable forecast. See the
+[operational review contract](jev_operations.md) for timestamp filtering,
+provisional thresholds, evidence and failure states.
 
 ## Model and result analysis
 

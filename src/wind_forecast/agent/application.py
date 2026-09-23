@@ -172,7 +172,7 @@ def _safe_error(exc):
 
 
 def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, weather_provider=None,
-                 model_metadata=None) -> ApplicationRun:
+                 model_metadata=None, jev_client=None) -> ApplicationRun:
     """Execute one issue. Invalid configuration raises ValueError; run failures return saved states.
 
     Injected predictors/providers are trusted Python dependencies, never browser uploads.
@@ -305,6 +305,24 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
                 raise ValueError("train_model must complete before forecast tools")
             return getattr(session, name)()
 
+        def inspect():
+            analysis = session_step("inspect_forecast")
+            if config.jev_enabled and "operations" not in report:
+                from wind_forecast.agent.jev import review_operations
+                record("review_operations", "started", "Interpret near-term operational evidence with Jev")
+                report["operations"] = review_operations(
+                    config, session.result, session.weather, observations, client=jev_client)
+                review = report["operations"]
+                record("review_operations", review["state"], {
+                    "model": review.get("model"), "input_hash": review.get("input_hash"),
+                    "needs_review": review.get("needs_review"), "reason": review.get("reason"),
+                })
+            review = report.get("operations")
+            if review:
+                return {**analysis, "operations": {"state": review["state"],
+                    "by_turbine": review.get("by_turbine", {}), "message": review["message"]}}
+            return analysis
+
         def save():
             nonlocal saved_dir
             if session is None:
@@ -319,7 +337,7 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
         tools = {"fetch_weather": fetch_weather, "prepare_data": prepare_data, "train_model": train_model,
             "audit_inputs": lambda: session_step("audit_inputs"),
             "predict_power": lambda: session_step("predict_power"),
-            "inspect_forecast": lambda: session_step("inspect_forecast"), "save_forecast": save}
+            "inspect_forecast": inspect, "save_forecast": save}
         ai_text = ""
         if config.controller == "openai":
             settings = runtime_settings()
@@ -354,6 +372,11 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
                     "Held-out accuracy metrics are in report.json; review coverage and provenance."))
         if ai_text:
             summary += "\n\n" + ai_text
+        if "operations" in report:
+            review = report["operations"]
+            summary += "\n\nJev operational review: " + review["state"] + ". " + review["message"]
+            for turbine, advisory in review.get("by_turbine", {}).items():
+                summary += f"\n- {turbine}: {advisory['recommendation']}"
         run = ApplicationRun("completed",request,session.result,session.weather,trace,saved_dir,report,summary)
     except Exception as exc:
         error = _safe_error(exc)
@@ -366,6 +389,8 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
                              "Forecast not completed. " + error,error)
     _write(run.run_dir/"request.json",config.to_dict())
     _write(run.run_dir/"report.json",run.report)
+    if "operations" in run.report:
+        _write(run.run_dir/"operations.json",run.report["operations"])
     if run.weather is not None:
         weather_data = weather_bundle_dict(run.weather)
         weather_data["source_uri"] = _safe_source_uri(run.weather.source_uri)
