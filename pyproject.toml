@@ -1,14 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "imokazakhstan"
+name = "hackalem-wind-forecast"
 version = "0.1.0"
-description = "HackAlem 2026 — team imokazakhstan"
+description = "Agentic wind-power forecasting hackathon starter"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "openai>=1.40",
-    "python-dotenv>=1.0",
-    "streamlit>=1.38",
-]
+dependencies = []
 
-[tool.setuptools]
-packages = ["core"]
+[project.optional-dependencies]
+app = ["streamlit>=1.40,<2"]
+openai = ["openai>=1.60,<3"]
+dev = ["ruff>=0.9,<1"]
+all = ["streamlit>=1.40,<2", "openai>=1.60,<3", "ruff>=0.9,<1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

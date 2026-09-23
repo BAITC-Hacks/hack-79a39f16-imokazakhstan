@@ -1,67 +1,11 @@
-# AGENTS.md
+# Instructions for Codex in this repository
 
-Инструкции для Codex и других AI-агентов, работающих в этом репозитории.
+Read `README.md`, `docs/architecture.md`, and the shared schemas in `src/wind_forecast/contracts.py` before editing.
 
-## Контекст
+This repository is being developed by three people in separate clones. Identify your assigned person in the task prompt and stay within that person's ownership below. Do not rewrite another person's module, root dependency list, shared contract, or fixtures unless the prompt explicitly assigns integration ownership. Propose shared changes to Person 3 and keep adapters backward compatible. Commit on your assigned branch. Do not add real-looking outputs from synthetic data.
 
-Хакатон HackAlem 2026 (Астана), команда imokazakhstan. Демо-день 29 сентября.
-Цель — **рабочее демо**, а не идеальная архитектура. Выбирай самое простое решение, которое работает.
+- Person 1: `src/wind_forecast/data/`, `src/wind_forecast/weather/`, `docs/data.md`.
+- Person 2: `src/wind_forecast/models/`, `src/wind_forecast/evaluation/`, `docs/model.md`.
+- Person 3: `src/wind_forecast/agent/`, `app.py`, `scripts/`, shared contracts, root packaging, README and integration.
 
-**Кейс:** _TODO — вписать описание задачи, как только станет известно._
-
-## Стек
-
-- Python 3.11+
-- UI: **Streamlit** (`app.py`)
-- LLM: SDK `openai` для двух провайдеров:
-  - OpenAI (основной)
-  - NVIDIA NIM (`https://integrate.api.nvidia.com/v1`, OpenAI-совместимый)
-- Данные: SQLite или JSON/CSV. Без отдельного сервера БД.
-- Зависимости: `pyproject.toml`
-
-Не добавляй новые фреймворки (React, Docker, Celery, ORM и т.п.) без явной просьбы.
-Новую зависимость добавляй в `pyproject.toml`, в секцию `dependencies`.
-
-## Структура
-
-```
-app.py          # Streamlit UI — только интерфейс, без бизнес-логики
-core/           # вся логика; НЕ импортирует streamlit
-  config.py     # чтение .env — единственное место с os.getenv
-  llm.py        # chat() / chat_stream() — все вызовы LLM только через этот модуль
-docs/           # заметки по кейсу, питч
-```
-
-Почему так: если понадобится FastAPI или Telegram-бот, они просто импортируют `core/`.
-
-## Команды
-
-```bash
-# запуск
-uv run streamlit run app.py
-# или без uv:
-source .venv/bin/activate && streamlit run app.py
-
-# быстрая проверка, что всё импортируется
-python -c "import core.llm, core.config"
-```
-
-После изменений убедись, что приложение запускается без ошибок.
-
-## Правила
-
-- **Секреты:** ключи только в `.env` (он в `.gitignore`). Никогда не хардкодь ключи и не коммить `.env`.
-  Новую переменную окружения добавляй одновременно в `core/config.py` и `.env.example`.
-- **LLM:** не создавай клиентов `OpenAI(...)` вне `core/llm.py`. Имена моделей не хардкодь — они в `.env`.
-- **Бюджет:** у команды по $50 на OpenAI и NVIDIA. Не пиши циклы с массовыми вызовами API без явной просьбы;
-  для разработки используй дешёвые модели.
-- **Демо не должно падать:** ошибки API ловим и показываем в UI через `st.error`, а не роняем приложение.
-- **Язык:** интерфейс и комментарии на русском, имена переменных и функций на английском.
-- **Мелкие изменения:** один коммит — одна фича. Не переписывай чужие файлы целиком без необходимости.
-
-## Команда
-
-<!-- Кто за что отвечает: так агенты разных людей реже правят одни и те же файлы -->
-- Adilet Zauytkhan — _TODO_
-- _TODO_
-- _TODO_
+The mock path must always run without network access or API keys. Historical mode rejects synthetic or unverified weather and inputs available after the simulated issue time. Keep API credentials in local environment variables; never print, commit, or store them in traces.

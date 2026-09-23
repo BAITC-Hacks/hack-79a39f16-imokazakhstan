@@ -1,24 +1,20 @@
-# Секреты
-.env
-.env.*
-!.env.example
-.streamlit/secrets.toml
-
-# Python
+.venv/
 __pycache__/
 *.py[cod]
-.venv/
-venv/
-*.egg-info/
+.env
+.DS_Store
 .pytest_cache/
 .ruff_cache/
-
-# Данные и локальные файлы
-*.db
-*.sqlite
-data/private/
-
-# OS / IDE
-.DS_Store
-.idea/
-.vscode/
+build/
+dist/
+*.egg-info/
+runs/**
+!runs/.gitkeep
+data/raw/**
+!data/raw/.gitkeep
+data/cache/**
+!data/cache/.gitkeep
+data/processed/**
+!data/processed/.gitkeep
+src/wind_forecast/models/artifacts/**
+!src/wind_forecast/models/artifacts/.gitkeep
