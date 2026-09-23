@@ -14,7 +14,9 @@ python scripts/run_demo.py
 streamlit run app.py
 ```
 
-The demo should create a forecast CSV, a JSON manifest, and a JSONL agent trace under `runs/demo/`. The inputs and output are synthetic and must not be submitted as real evaluation results. The Streamlit app runs the same demo. Neither requires API credentials.
+The demo creates a new versioned directory under `runs/demo/` on each run, containing `forecast.csv`, `manifest.json`, and `trace.jsonl`. Use `python scripts/run_demo.py --output PATH` to choose another artifact root. The manifest records forecast metadata and weather provenance. The inputs and output are synthetic and must not be submitted as real evaluation results. Neither the script nor the app requires API credentials.
+
+The Streamlit app lets you choose a UTC issue date and hour, one or both fixture turbines, and a 24- or 48-hour horizon. Each completed run is saved under `runs/fixture/` with its forecast, manifest, and trace available for download. Historical mode remains unavailable until the team supplies verified archived weather, observations, and a fitted model.
 
 ## Assign the three tracks
 

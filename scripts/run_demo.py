@@ -4,12 +4,9 @@
 from __future__ import annotations
 
 import argparse
-import csv
-import json
-from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
 
+from wind_forecast.agent.artifacts import save_forecast_run
 from wind_forecast.agent.runner import ForecastWorkflow
 from wind_forecast.contracts import ForecastRequest
 from wind_forecast.demo_data import sample_observations
@@ -32,36 +29,9 @@ def main() -> None:
     observations = sample_observations()
     predictor = EmpiricalPowerCurve().fit(observations)
     workflow = ForecastWorkflow(MockWeatherProvider(), predictor)
-    result, trace = workflow.run(request, observations)
-
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    forecast_path = output_dir / "forecast.csv"
-    with forecast_path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(asdict(result.rows[0]).keys()))
-        writer.writeheader()
-        writer.writerows(asdict(row) for row in result.rows)
-    (output_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "forecast_id": result.forecast_id,
-                "request_id": result.request_id,
-                "model_id": result.model_id,
-                "weather_bundle_id": result.weather_bundle_id,
-                "status": result.status,
-                "is_synthetic": result.is_synthetic,
-                "warnings": result.warnings,
-                "row_count": len(result.rows),
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    (output_dir / "trace.jsonl").write_text(
-        "".join(json.dumps(event) + "\n" for event in trace.events), encoding="utf-8"
-    )
-    print(f"Wrote {len(result.rows)} synthetic rows to {forecast_path}")
+    run = workflow.run_detailed(request, observations)
+    artifacts = save_forecast_run(run.result, run.trace, run.weather, args.output)
+    print(f"Wrote {len(run.result.rows)} synthetic rows to {artifacts.forecast_csv}")
     print("Synthetic fixture output. Do not use it as a scored forecast.")
 
 
