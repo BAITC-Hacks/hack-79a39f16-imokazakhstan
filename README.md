@@ -56,7 +56,9 @@ Choose a historical issue time, turbines, and horizon. The real workflow uses
 the original NOAA GFS archive by default, with a local cache. Your teammate can
 instead supply canonical weather bundles or a configured Python provider. The
 first real run downloads forecast fields and can take longer than a fixture.
-See [weather archive behavior](docs/weather_archive.md).
+See [weather archive behavior](docs/weather_archive.md). Person 1's merged
+provider also exports app-compatible `weather.json` bundles; follow the
+[mapping and export instructions](docs/data.md#integration-after-merging-the-team-branches).
 
 Without a configured teammate model, the application fits the included empirical
 wind-to-power baseline using only observations eligible at the issue time. A

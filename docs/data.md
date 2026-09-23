@@ -16,6 +16,47 @@ Prove one real run for both turbine coordinates and the full 48-hour horizon bef
 smoke proof described below now supports a real GFS provider; the local mock
 provider remains for UI and integration only.
 
+
+## Integration after merging the team branches
+
+The original Person 1 implementation notes below describe that developer's
+checkout at the time. The merged application now includes the organizer CSV
+adapter, hourly aggregation, an empirical baseline, and the optional ecCodes
+`weather` dependency. Raw CSVs and weather caches remain ignored local files;
+cloning the repository does not transfer them.
+
+Person 1's weather export now adds **`weather.json`**, a complete shared
+`WeatherBundle`, alongside `weather.csv` and the evidence files. Its checksum is
+included in `handoff_manifest.json`. In Streamlit, select **Teammate weather
+bundle** and upload this `weather.json`. In Python/CLI set `weather_source` to
+`bundles` and `weather_path` to that specific file, rather than the handoff
+directory (which also contains provider-specific JSON manifests).
+
+The application uses `T1` and `T2`. The standalone Person 1 CLI preserves its
+original `turbine_1`/`turbine_2` defaults. For an application-compatible export,
+use the explicit mapping supplied in `examples/person1_locations.json`:
+
+```bash
+python -m wind_forecast.weather export \
+  --issue-time 2026-02-01T00:00:00Z --horizon-hours 48 \
+  --locations examples/person1_locations.json \
+  --cache-dir data/cache/person1-noaa-gfs --network
+```
+
+This command may download about 128 MiB on a fresh cache. Omit `--network` to
+require an existing matching cache. It creates a new immutable handoff under
+`data/processed/`; existing exports are not overwritten. A cache made with the
+old turbine labels is not silently relabeled or reused for the `T1`/`T2` request.
+The provider's wind is **10 m**, unlike the application's default **100 m**
+provider. Match the trained model's wind feature height to the selected bundle.
+
+The generic `data/source_adapter.py` preserves the configured source cadence;
+it does not automatically aggregate ten-minute records into hours. For the
+supplied organizer CSVs, use the application's organizer input path, which
+requires six samples for each hourly mean. Its canonical CSV input expects
+already aggregated, complete UTC hour-end observations. Both paths retain
+explicit timestamp assumptions and source evidence.
+
 ## Person 1 implementation and evidence (2026-09-23)
 
 The first weather feasibility gate passed for **one probe issue time only**. The
@@ -26,7 +67,7 @@ for expanding the work after the missing source facts arrive.
 
 ### Confirmed locations and mapping boundary
 
-The two [brief-supplied map links](../docs/HackAlem%20AI_%20Agentic%20AI%20%D0%B4%D0%BB%D1%8F%20%D0%BF%D1%80%D0%BE%D0%B3%D0%BD%D0%BE%D0%B7%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D1%8F%20%D0%B2%D1%8B%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%BA%D0%B8%20%D0%92%D0%AD%D0%A1.pdf)
+The two [brief-supplied map links](HackAlem%20AI_%20Agentic%20AI%20Case.pdf)
 redirected to Google Maps searches containing these latitude/longitude pairs.
 The exact source and resolved search coordinates are recorded in
 `src/wind_forecast/weather/locations.json`.
@@ -174,7 +215,7 @@ Implementation branch: `codex/person-1-data-weather`.
 
 Read together: `AGENTS.md`, `README.md`, `docs/architecture.md`,
 `src/wind_forecast/contracts.py`, and `codex_prompts/person_1.md`. The original
-case brief is `docs/HackAlem AI_ Agentic AI для прогнозирования выработки ВЭС.pdf`.
+case brief is `docs/HackAlem AI_ Agentic AI Case.pdf`.
 The other participants' prompts were consulted only to identify boundaries.
 
 | Area | Current state | Person 1 action |

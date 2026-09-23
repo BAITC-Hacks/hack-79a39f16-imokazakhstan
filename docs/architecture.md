@@ -42,8 +42,12 @@ flowchart TD
 
 Application adapters live under Person 3's integration area. Existing Person 1
 and Person 2 modules remain independent replacement points. In particular,
-`weather/noaa_gfs.py` is the original Person 1 extension point; the application's
-archive implementation is `agent/noaa_archive.py`.
+`weather/noaa_gfs.py` is Person 1's implemented provider with cache-only replay
+and optional retrieval of original 10 m forecast wind. The application's default
+archive implementation remains `agent/noaa_archive.py` (100 m wind by default).
+These providers retain separate cache formats. Person 1's export now includes
+a shared `weather.json` bundle accepted by the application's bundle input;
+source wind height stays explicit. See the integration section in `data.md`.
 
 ## One forecast run
 

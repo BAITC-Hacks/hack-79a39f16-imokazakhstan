@@ -20,6 +20,9 @@ all = ["streamlit>=1.40,<2", "openai>=2,<3", "eccodes>=2.39,<3", "ruff>=0.9,<1"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"wind_forecast.weather" = ["locations.json"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

@@ -6,6 +6,8 @@ import csv
 import hashlib
 import json
 import os
+from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 from wind_forecast.contracts import ForecastRequest
@@ -63,6 +65,12 @@ def publish_weather_handoff(
                         row.wind_height_m,
                     )
                 )
+        # The application consumes a complete shared WeatherBundle, not the
+        # provider-specific proof manifest or a CSV lacking release metadata.
+        (temporary / "weather.json").write_text(
+            json.dumps(asdict(bundle), default=datetime.isoformat, indent=2,
+                       sort_keys=True, allow_nan=False), encoding="utf-8"
+        )
         (temporary / "verified_archive_manifest.json").write_bytes(manifest_path.read_bytes())
         proof_path = manifest_path.with_name(f"{bundle.bundle_id}.json")
         (temporary / "origin_proof.json").write_bytes(proof_path.read_bytes())
