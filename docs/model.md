@@ -3,11 +3,11 @@
 ## Person 2 owns
 
 - Keeping the empirical per-turbine wind-to-power baseline runnable and serializable.
-- Adding a CatBoost challenger only when archived weather covariates are available for both training and replay.
+- Comparing history-only statistical, tree, and neural models under the user's daily 06:00 / 48-hour schedule. Weather-based variants additionally require eligible archived weather for both training and replay.
 - Using chronological development/validation splits and freezing choices before the February test.
 - Reporting sample counts and MAE/RMSE by turbine and lead bucket, with the baseline comparison.
 
-The included `EmpiricalPowerCurve` uses the nearest observed integer wind-speed bin. The SCADA diagnostic below evaluates this curve on real measured wind; operational forecast quality is not yet validated. The separate demo training data are fabricated, and all demo outputs remain synthetic. Do not claim prediction skill from them.
+The included `EmpiricalPowerCurve` uses the nearest observed integer wind-speed bin. The initial SCADA diagnostic below evaluates this curve on real measured wind; it does not validate forecasts made with forecast weather. Actual history-only 48-hour replays are documented in the later sections. The separate demo training data are fabricated, and all demo outputs remain synthetic. Do not claim prediction skill from them.
 
 Do not use February SCADA values unless organizers confirm that they become available to the simulated predictor at each issue time. Do not train or validate on future observed weather while claiming operational forecast accuracy. Keep model artifact, feature list, training cutoff, input hash and dependency versions with results.
 
@@ -48,8 +48,9 @@ integer wind-speed bins per turbine, using the nearest populated bin at inferenc
 Unknown turbines use the pooled curve. Temperature is not a feature.
 
 **These are measured-wind curve diagnostics, NOT 24/48-hour forecast scores.**
-The January wind at the target time is observed, not forecast. No lead-time
-metrics can honestly be reported without archived weather forecasts.
+The January wind at the target time is observed, not forecast. This diagnostic
+has no forecast lead. The history-only replay below evaluates genuinely future
+targets without needing future weather inputs.
 
 | Turbine | Training rows | Validation rows | Curve MAE | Curve RMSE | Constant training-mean MAE | Constant training-mean RMSE |
 |---|---:|---:|---:|---:|---:|---:|
@@ -107,9 +108,9 @@ model = EmpiricalPowerCurve.load(
 # result = model.predict(request, observations, weather)
 ```
 
-Next: obtain eligible archived forecast weather from Person 1, agree hourly
-aggregation and issue-time conventions, then evaluate MAE/RMSE and counts by
-turbine and forecast lead. Add a challenger only after that input path is ready.
+For a weather-based challenger, obtain eligible archived forecast weather from
+Person 1 and evaluate MAE/RMSE by turbine and forecast lead. History-only
+challengers below are independent of that weather input path.
 
 ## Daily SCADA-only 48-hour forecasting experiment
 
@@ -465,3 +466,137 @@ The output directory must be new. `costs.md` contains the comparison;
 `costs.csv` and `costs.json` retain timings, allocation, price sources, assumptions,
 and cost breakdowns. The first measured run is in the ignored local directory
 `src/wind_forecast/models/artifacts/cost-estimate-v1/`.
+
+## Финальная модель и подключение к сайту (23 сентября 2026)
+
+Новый автономный runtime: `wind_forecast.models.deployment:load_predictor`.
+Основной кандидат — прямой CatBoost MultiRMSE с 48 выходами, 200 деревьями глубины 4.
+317 признаков: собственная история мощности/ветра/температуры, сезон, номер турбины
+и история соседней турбины. Контекст статистик до 30 дней, подробные лаги последней недели.
+Это статистическая зависимость двух турбин, не физическая модель следа за турбиной.
+Погода будущих часов не подставляется. Весам не нужны сеть, NVIDIA API или GPU.
+
+Веса обучены на Brev и скачаны в
+`src/wind_forecast/models/artifacts/deploy-final/`:
+`catboost_neighbor.cbm` + `catboost_neighbor.metadata.json` — основной CPU-кандидат;
+`patch_transformer.pt` + `patch_transformer.metadata.json` — альтернативный небольшой
+трансформер с 76 608 параметрами (168 часов контекста, блоки по 12 часов, шаг 6,
+два attention-слоя, ширина 64). Он вдохновлён PatchTST, но не является точной реализацией статьи.
+Артефакты исключены из git; передавать их отдельно с metadata и проверкой SHA-256.
+Обучение ограничено доступными данными до `2026-01-31T19:00:00Z`;
+модель нельзя использовать для честной оценки более ранних дат.
+Для исторических метрик использованы отдельные ежемесячные переобучения.
+
+Локальный запуск из корня репозитория (Python 3.11/3.12):
+
+```bash
+python -m pip install -r src/wind_forecast/models/requirements-deploy.txt
+PYTHONPATH=src python -m wind_forecast.models.deployment \
+  --model src/wind_forecast/models/artifacts/deploy-final/catboost_neighbor.cbm \
+  --metadata src/wind_forecast/models/artifacts/deploy-final/catboost_neighbor.metadata.json \
+  --csv '/path/to/turbine 1.csv' '/path/to/turbine 2.csv' \
+  --issue '2026-02-01T06:00:00+05:00' --output forecast.json
+```
+
+Для альтернативного трансформера дополнительно установить `torch==2.8.0` и заменить
+пару путей на `.pt`/его metadata. Runtime по умолчанию CPU. Готовые локальные результаты
+проверки — `deploy-final/local-validation.json`; прогнозы-примеры на февраль являются
+прогнозами без доступного факта, а не результатами оценки точности.
+
+### Промпт для Person 3: интеграция
+
+> Подключи модель Person 2 к сайту, сохранив автономный mock-режим. Используй существующий
+> загрузчик `load_team_predictor` и factory `wind_forecast.models.deployment:load_predictor`.
+> Передай CBM и metadata из `src/wind_forecast/models/artifacts/deploy-final/`.
+> Для этого history-only режима не требуй WeatherBundle и не создавай фиктивную погоду.
+> Приведи вход к Observation: почасовые средние, timestamp — КОНЕЦ часа, timezone UTC,
+> available_at не позже issue_time. Исходные CSV имеют локальное время UTC+5;
+> предполагается начало десятиминутного интервала, шесть полных записей дают один час.
+> Не агрегируй уже почасовые Observation повторно. Передай обе турбины T1/T2 за последние
+> 30 дней, отфильтровав будущее и недоступные на момент выпуска записи. Выпуск строго
+> 06:00 UTC+5, горизонт 24 или 48 часов, ежедневное обновление. Менее 18 доступных часов
+> мощности за последние сутки — понятная ошибка пользователю; пропуски не скрывать.
+> Уважай trained_through, SHA-256 и observation_policy; финальные веса нельзя применять
+> к историческому issue_time раньше cutoff. Для февраля 2026 сейчас нет фактической мощности.
+> Покажи график мощности 0–1 по часам, приблизительные 80% интервалы при наличии,
+> название модели, время выпуска, последний доступный факт и предупреждение о прогнозе
+> только по истории без будущей погоды. 0–1 не переводить в кВт/МВт без подтверждённой
+> номинальной мощности. Не называй RMSE процентом точности. Не выводи API-ключи.
+> Разделяй основной прогноз и любые будущие поправки: итог = основной прогноз + error.
+> Переключатель экспериментального трансформера допустим, но более сложная модель
+> не должна автоматически заменять более точную. Для ретроспективных сравнений загружай
+> сохранённые replay-результаты, а не пересчитывай прошлое финальными весами.
+
+Обучение и сравнение воспроизводят `evaluation/extended_replay.py`,
+`run_extended_suite.py`, `remote_gpu_suite.py`, `final_fit.py`, `summarize_extended.py`.
+Нейронная early-stopping выборка — последние 30 дней до cutoff; между ней и обучением
+исключены пересекающиеся 48-часовые target-окна. Все нейронные CPU-результаты пересчитаны
+с этим правилом в `neural-purged/`; первоначальные `extended-v2/` сохраняются для аудита.
+Chronos — ретроспективное сравнение современных pretrained-весов: дата выпуска весов
+позже части оценочного периода, состав pretraining неизвестен. Нельзя утверждать,
+что эти веса реально были доступны на дату исторического выпуска прогноза.
+
+Для этой модели `frozen_jan31` не позволяет честно обновлять прогноз весь февраль:
+после первого выпуска свежего суточного контекста уже не хватит. Для ежедневных
+выпусков нужны новые фактические измерения до 06:00 (`observation_policy=available`).
+Runtime останавливается при недостаточном контексте, вместо подмены данных.
+
+Ссылки на методы: [CatBoost MultiRMSE](https://catboost.ai/docs/en/concepts/loss-functions-multiregression),
+[PatchTST](https://arxiv.org/abs/2211.14730),
+[Chronos и LoRA](https://github.com/amazon-science/chronos-forecasting).
+
+### Завершённое сравнение
+
+19 конфигураций, 33 263 одинаковые пары прогноз–факт за февраль 2025 — январь 2026.
+Каждый день выпуск в 06:00 UTC+5, 48 часов; supervised-модели переобучались ежемесячно.
+Ранжирование вариантов — февраль–ноябрь; декабрь–январь — дополнительный контроль,
+который уже просматривался ранее, поэтому это не новый независимый тест.
+
+| Конфигурация | RMSE | MAE |
+|---|---:|---:|
+| **CatBoost + соседняя турбина, 200 деревьев CPU** | **0.335738** | 0.290722 |
+| CatBoost GPU, 600 деревьев | 0.339462 | 0.291661 |
+| Предыдущее wind-tree-scenarios | 0.340804 | 0.279409 |
+| ARIMA(2,0,1) | 0.341299 | 0.290699 |
+| Небольшой patch-transformer, ширина 24 | 0.348246 | 0.306581 |
+| Patch-transformer GPU, ширина 64 | 0.349689 | 0.306053 |
+| GRU | 0.350126 | 0.296007 |
+| Graph-GRU, два узла | 0.350687 | 0.296378 |
+| LSTM | 0.350947 | 0.296722 |
+| Chronos Small + GPU LoRA 200 шагов/месяц | 0.367962 | 0.282587 |
+| Chronos Base + GPU LoRA 200 шагов/месяц | 0.378582 | 0.290691 |
+
+Выбран простой CatBoost: снижение RMSE относительно предыдущего решения около 1.49%,
+но MAE ухудшился примерно на 4.05%. Это существенное ограничение выбора по RMSE.
+На декабре–январе его RMSE 0.355702. Средняя абсолютная поправка по известным ошибкам
+последних 30 дней ухудшила RMSE до 0.340090; в основной прогноз она не добавляется.
+Ансамбль 75% CatBoost + 25% предыдущей модели дал 0.335107: дополнительное улучшение
+лишь около 0.19%, поэтому для простого развёртывания оставлена одна модель.
+Признаки соседа не доказывают физическое влияние; для переноса на новые турбины
+нужны их идентификация, геометрия, направление ветра и отдельная проверка.
+
+Ретроспективные 80% интервалы CatBoost имели покрытие 79.51% и среднюю ширину 0.8323
+на шкале 0–1. Это широкая неопределённость, а не высокая точность.
+Metadata финальных весов содержит отдельные радиусы по турбинам и суткам горизонта,
+полученные из out-of-fold ошибок последних 30 известных дней. Для новых выпусков
+их нужно обновлять по созревшим фактическим значениям, не по будущим таргетам.
+
+Полный интерактивно открываемый HTML-отчёт: `models/artifacts/final-comparison/report.html`
+(относительно `src/wind_forecast/`); рядом `report.json`, `comparison.csv`, `monthly.csv`,
+`turbine_leads.csv`, сохранённые прогнозы и отдельные additive_errors.
+Первый GPU CatBoost завершился ошибкой режима boosting; повтор с `boosting_type=Plain`
+успешно прошёл все месяцы, обе записи сохранены для аудита.
+
+Brev: 4×L40S, тариф каталога $4.224/час за инстанс. Сам GPU-suite занял 355 секунд
+плюс загрузку/подготовку; арифметическая стоимость этих 355 секунд около $0.417,
+это не итоговый счёт за инстанс. Цена CPU-прогнозирования по указанной в отчёте
+Fargate-модели расходов около $0.00188/день с ежемесячным переобучением, без сайта,
+хранилища, сети и налогов; это расчёт, не оплаченный облачный замер.
+На локальном CPU весь прогноз двух турбин с подготовкой признаков занял около
+0.015 секунды для CatBoost, 0.027 секунды для сохранённого GPU-trained трансформера.
+Веса: 1 286 984 и 317 162 байта соответственно. GPU для ежедневного запуска не требуется.
+
+Проверено: 46 тестов приложения, 18 тестов моделей; дополнительно реальные скачанные
+веса проверены на 96 выходов, неизменность при добавлении будущих данных, фильтрацию
+поздно доступных наблюдений, ограничение даты обучения, SHA-256, интервалы и совместимость
+с существующим `load_team_predictor`. Brev оставлен работающим по последней просьбе пользователя.

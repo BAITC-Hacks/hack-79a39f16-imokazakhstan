@@ -68,15 +68,16 @@ class SequenceRegressor(nn.Module):
 
 
 def fit_sequence(kind, sequence, calendar, targets, train, issues, cutoff_ns,
-                 epochs=16, device='cpu', seed=42):
+                 epochs=16, device='cpu', seed=42, width=24):
     """Early stopping uses a preceding 30-day block, never replay targets."""
     torch.manual_seed(seed)
     np.random.seed(seed)
-    valid = train & (issues >= cutoff_ns-30*24*3600_000_000_000)
-    fit = train & ~valid
+    validation_start = cutoff_ns-30*24*3600_000_000_000
+    valid = train & (issues >= validation_start)
+    fit = train & (issues+48*3600_000_000_000<=validation_start)
     if fit.sum() < 20 or valid.sum() < 4:
         raise ValueError('insufficient chronological train/validation history')
-    model = SequenceRegressor(kind, hours=sequence.shape[2]).to(device)
+    model = SequenceRegressor(kind, hours=sequence.shape[2],width=width).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=.001, weight_decay=.01)
     sx,sc,sy = [torch.as_tensor(a, dtype=torch.float32) for a in (sequence,calendar,targets)]
     indices = np.where(fit)[0]
@@ -109,6 +110,7 @@ def fit_sequence(kind, sequence, calendar, targets, train, issues, cutoff_ns,
     model.eval()
     return model, {'fit_seconds':time.perf_counter()-began, 'epochs_run':len(history),
                    'selected_epoch':selected, 'validation_mse':best,
+                   'width':width,'context_hours':sequence.shape[2],
                    'training_origins':int(fit.sum()), 'validation_origins':int(valid.sum()),
                    'parameters':sum(p.numel() for p in model.parameters())}
 

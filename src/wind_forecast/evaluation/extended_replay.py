@@ -24,7 +24,7 @@ from wind_forecast.evaluation.monthly_replay import HOUR_NS, ZONE
 
 MODELS = ['catboost_multi4','catboost_multi6','catboost_neighbor','catboost_pooled',
           'arima_201','autoarima','sarima_101','gru','lstm','patch_transformer','graph_gru',
-          'chronos_bolt_tiny','chronos2_small','chronos2_small_lora']
+          'chronos_bolt_tiny','chronos2_small','chronos2_small_lora','chronos2_base','chronos2_base_lora']
 
 
 def prepare(experiment, output):
@@ -102,7 +102,7 @@ def run(args):
         import torch
         from chronos import BaseChronosPipeline
         torch.set_num_threads(2)
-        path = args.pretrained/('bolt-tiny' if name=='chronos_bolt_tiny' else 'chronos2-small')
+        path = args.pretrained/('bolt-tiny' if name=='chronos_bolt_tiny' else 'chronos2-base' if name.startswith('chronos2_base') else 'chronos2-small')
         pipeline = BaseChronosPipeline.from_pretrained(str(path),device_map=args.device,torch_dtype=torch.float32)
     for month in pd.date_range(args.first_month,args.last_month,freq='MS',tz=ZONE):
         cutoff = month+pd.Timedelta(hours=6)
@@ -120,9 +120,15 @@ def run(args):
             if name.startswith('catboost'):
                 from catboost import CatBoostRegressor
                 xx = data['neighbor_x'] if name=='catboost_neighbor' else x
-                params = dict(iterations=200,depth=4 if name=='catboost_multi4' else 6,
+                params = dict(iterations=200,depth=6 if name=='catboost_multi6' else 4,
                     border_count=32,learning_rate=.04,l2_leaf_reg=10,thread_count=2,random_seed=42,
                     allow_writing_files=False,verbose=False)
+                if args.cat_iterations:
+                    params['iterations'] = args.cat_iterations
+                if args.cat_depth:
+                    params['depth'] = args.cat_depth
+                if args.device=='cuda':
+                    params.update(task_type='GPU',devices='0',boosting_type='Plain')
                 model = CatBoostRegressor(loss_function='RMSE' if name=='catboost_pooled' else 'MultiRMSE',**params)
                 info['hyperparameters'] = params
                 model.fit(expanded_features(xx[train]) if name=='catboost_pooled' else xx[train],
@@ -141,7 +147,7 @@ def run(args):
                 torch.set_num_threads(2)
                 seq = data['sequence'] if name=='graph_gru' else data['sequence'][:,:1]
                 model, details = fit_sequence(name,seq,data['calendar'],y,train,issues,cutoff.value,
-                                              epochs=args.epochs,device=args.device)
+                                              epochs=args.epochs,device=args.device,width=args.width)
                 info.update(details)
                 tick = time.perf_counter()
                 pred[use] = predict_sequence(model,seq[use],data['calendar'][use],args.device)
@@ -164,7 +170,7 @@ def run(args):
                                       'past_covariates':{'wind':history.wind.to_numpy(dtype=np.float32),
                                                          'temperature':history.temperature.to_numpy(dtype=np.float32)}})
                     active_pipeline = pipeline.fit(tasks,prediction_length=48,context_length=168,
-                        finetune_mode='lora',num_steps=args.lora_steps,batch_size=8,learning_rate=1e-5,
+                        finetune_mode='lora',num_steps=args.lora_steps,batch_size=args.lora_batch,learning_rate=args.lora_lr,
                         output_dir=args.output/month.strftime('%Y-%m'),optim='adamw_torch',
                         report_to='none',disable_tqdm=True,logging_steps=args.lora_steps,
                         seed=42,data_seed=42)
@@ -209,8 +215,9 @@ def run(args):
         fits.append(info)
         np.savez_compressed(args.output/'predictions.npz',prediction=pred,low=low,high=high,
                             issues=issues,turbines=data['turbines'],actual=y)
-        report = {'model':name,**score(pred,data),'fits':fits,'failures':failures,
-                  'device':args.device,'source_sha256':data['source_sha256'],
+        report = {'model':args.label or name,'architecture':name,**score(pred,data),'fits':fits,'failures':failures,
+                  'device':args.device if foundation or name.startswith('catboost') or name in ('gru','lstm','patch_transformer','graph_gru') else 'cpu',
+                  'source_sha256':data['source_sha256'],
                   'elapsed_seconds':time.perf_counter()-began,
                   'peak_rss_mib':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/(1024**2 if platform.system()=='Darwin' else 1024),
                   'pretrained_hindsight':foundation,'complete':month.strftime('%Y-%m')==args.last_month,
@@ -236,12 +243,18 @@ def main():
     parser.add_argument('--dataset',type=Path,required=True)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--model',choices=MODELS)
+    parser.add_argument('--label')
     parser.add_argument('--device',choices=['cpu','mps','cuda'],default='cpu')
     parser.add_argument('--pretrained',type=Path,default=Path('src/wind_forecast/models/artifacts/pretrained'))
     parser.add_argument('--first-month',default='2025-01-01')
     parser.add_argument('--last-month',default='2026-01')
     parser.add_argument('--epochs',type=int,default=16)
+    parser.add_argument('--width',type=int,default=24)
+    parser.add_argument('--cat-iterations',type=int)
+    parser.add_argument('--cat-depth',type=int)
     parser.add_argument('--lora-steps',type=int,default=40)
+    parser.add_argument('--lora-batch',type=int,default=8)
+    parser.add_argument('--lora-lr',type=float,default=1e-5)
     parser.add_argument('--max-seconds',type=int,default=1200)
     args = parser.parse_args()
     if args.prepare:
