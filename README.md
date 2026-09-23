@@ -153,7 +153,9 @@ The controller uses the [Responses API function-calling interface](https://devel
 
 ### Jev: immediate operational review
 
-Set `TYPESAFE_API_KEY` in the local `.env`, then select **Your measurements →
+The shared Jev key is included in `typesafe.env` for this hackathon project.
+You can override it with `TYPESAFE_API_KEY` in the local `.env` or environment.
+Select **Your measurements →
 Optional settings → Jev: review the next 3 hours**. Add an optional operator note
 with its availability/expiry times, and generate the forecast. Read the **Jev ·
 Next 3 hours** card below the result analysis.

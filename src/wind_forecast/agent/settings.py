@@ -130,15 +130,19 @@ class RunConfig:
 
 def runtime_settings() -> dict[str, str]:
     """Load host settings; callers decide which optional services are enabled."""
+    project_typesafe_key = ""
     try:
-        from dotenv import load_dotenv
+        from dotenv import dotenv_values, load_dotenv
         load_dotenv(Path.cwd() / ".env", override=False)
+        project_typesafe_key = dotenv_values(
+            Path(__file__).resolve().parents[3] / "typesafe.env"
+        ).get("TYPESAFE_API_KEY", "") or ""
     except ImportError:
         pass
     return {
         "api_key": os.getenv("OPENAI_API_KEY", ""),
         "model": os.getenv("OPENAI_MODEL", "") or "gpt-4.1-mini",
-        "typesafe_api_key": os.getenv("TYPESAFE_API_KEY", ""),
+        "typesafe_api_key": os.getenv("TYPESAFE_API_KEY", "") or project_typesafe_key,
         "typesafe_model": os.getenv("TYPESAFE_MODEL", "") or "jev-1.13.0",
         "model_factory": os.getenv("WIND_MODEL_FACTORY", ""),
         "model_path": os.getenv("WIND_MODEL_PATH", ""),

@@ -43,7 +43,8 @@ and forecast CSV stay the same. See [Jev I/O and integration](jev_operations.md)
 | `operational_notes` | `[]` | Inline notes with `text`, `turbine_ids`, `available_at`, `valid_until` |
 | `operational_notes_path` | empty | JSON notes feed watched for changes; use instead of inline notes |
 
-Set `TYPESAFE_API_KEY` on the host, outside request JSON. The website also reads
+The project includes a shared Jev key in `typesafe.env`; setting `TYPESAFE_API_KEY`
+on the host overrides it. The website also reads
 `TYPESAFE_MODEL`; Python/CLI callers set `jev_model` explicitly to override its
 default. The offline fixture always skips Jev.
 

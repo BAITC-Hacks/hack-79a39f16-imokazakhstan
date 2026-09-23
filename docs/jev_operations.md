@@ -11,9 +11,10 @@ It supplies no new power values and executes no equipment commands.
 
 ## Enable it on the website
 
-1. Set `TYPESAFE_API_KEY` in the host's local `.env`. This is a TypeSafe credential;
-   an OpenAI key cannot authenticate to TypeSafe. `TYPESAFE_MODEL` defaults to
-   `jev-1.13.0`. Restart Streamlit if you change an already-loaded credential.
+1. Use the shared TypeSafe key included in `typesafe.env`, or override it with
+   `TYPESAFE_API_KEY` in the host's local `.env` or environment. An OpenAI key
+   cannot authenticate to TypeSafe. `TYPESAFE_MODEL` defaults to `jev-1.13.0`.
+   Restart Streamlit if you change an already-loaded credential.
 2. Select **Your measurements**, then set up a historical or live forecast.
 3. Open **Optional settings** and tick **Jev: review the next 3 hours**.
 4. Optionally enter an **Operator note**, its turbines, the UTC time it first
@@ -133,7 +134,7 @@ a `review_operations` trace event and a summary in `summary.md`. The ZIP include
 these files. They record the exact input/questions, input hash, policy version,
 thresholds, returned model version, validated API answers, token usage and
 per-turbine recommendations. Additional unknown HTTP response fields and error
-bodies are discarded; API credentials are never included.
+bodies are discarded; API credentials are not included in saved run reports.
 
 | Review state | Meaning |
 |---|---|
