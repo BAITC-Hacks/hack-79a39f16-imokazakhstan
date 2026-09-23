@@ -1,5 +1,8 @@
 # Application input, output, and team handoff
 
+For the simplified webpage and its controls, start with the [website guide](website_guide.md).
+This document covers the full Python/CLI interface, including advanced options.
+
 The application requests hourly normalized-power forecasts for `T1`, `T2`, or
 both. Supply an issue time, a 24- or 48-hour horizon, observation data, and
 forecast weather. The service filters what could have been known at that issue
@@ -14,8 +17,8 @@ From the repository root after installing the package:
 streamlit run app.py
 ```
 
-Choose fixture mode and run a forecast. No data upload, API key, GPU, or network
-request is needed. Fixtures and their output are synthetic. Use this mode to
+Choose **Demo data** and click **Run demo forecast**. No data upload, API key,
+GPU, or network request is needed. Fixtures and their output are synthetic. Use this mode to
 demonstrate the interaction and inspect saved artifacts.
 
 Equivalent command:
@@ -468,6 +471,7 @@ trained later or substitute realized weather for original forecast inputs.
 ## OpenAI and remaining decisions
 
 Set `OPENAI_API_KEY` and `OPENAI_MODEL` locally and select `controller="openai"`
+in Python (or **Use OpenAI agent** under Optional settings on the website)
 for paid API orchestration. The default is deterministic. OpenAI can make at
 most eight API requests per run, capped at 900 output tokens per request, with
 SDK retries disabled. Only bounded summaries cross the API boundary. Local tools

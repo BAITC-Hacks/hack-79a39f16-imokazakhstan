@@ -1,156 +1,155 @@
-# HackAlem wind-power forecasting application
+# WindScope — wind-power forecasting
 
-A Python application for forecasting hourly **normalized active power** for the
-two case turbines, 24 or 48 hours ahead. It includes a Streamlit interface, a
-Python API, a command-line runner, historical replay, versioned outputs, and an
-optional OpenAI tool controller. Numerical forecasts come from Python models.
+WindScope predicts **hourly normalized active power** for two wind turbines,
+24 or 48 hours ahead. The website lets a reviewer run a demo in one click or
+forecast from the organizer's measurements and original archived weather.
 
-The offline fixture runs without credentials or internet. Real runs load the
-organizer's SCADA exports, select eligible forecast weather, fit the supplied
-empirical baseline or load your team's model, and preserve input provenance.
-The baseline gives the application a usable starting model; a successful run
-does not establish its accuracy.
+## Run the project
 
-## Run locally
-
-Use Python 3.11 or newer, from this repository directory:
+Requires **Python 3.11 or newer**. Run these commands in a terminal:
 
 ```bash
+git clone https://github.com/BAITC-Hacks/hack-79a39f16-imokazakhstan.git
+cd hack-79a39f16-imokazakhstan
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[app,openai,weather]"
-streamlit run app.py
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
-On Windows, activate with `.venv\Scripts\activate` instead. The `weather` extra
-installs the decoder for the original NOAA archive provider. An offline fixture
-needs only `pip install -e ".[app]"`.
+On Windows PowerShell, replace the activation command with:
 
-In the application, run the fixture first. Select the issue time in UTC, one or
-both turbines, and a 24- or 48-hour horizon. A completed two-turbine, 48-hour run
-contains **96 hourly predictions** and downloadable artifacts. Fixture outputs
-are visibly synthetic and cannot be used as case evaluation forecasts.
+```powershell
+.venv\Scripts\Activate.ps1
+```
 
-The same fixture can run from the terminal:
+Open **http://localhost:8501** (or the address printed by Streamlit).
+The installation includes the interface, optional OpenAI client, and NOAA
+weather decoder. If you only need the offline demo, install
+`python -m pip install -e ".[app]"` instead.
+
+Already cloned? Pull the team's latest changes before installing dependencies.
+Run commands from the repository folder so local files and `.env` are found.
+
+## A one-minute demonstration
+
+1. Leave **Demo data** selected.
+2. Choose **24 hours** or **48 hours**, and one or both turbines.
+3. Click **Run demo forecast**.
+4. Read the chart under **Read your forecast**, then download the CSV.
+
+This path works without API keys or internet after installation. All demo
+measurements, weather, and predictions are explicitly synthetic.
+
+## Forecast from the organizer's measurements
+
+1. Select **Your measurements**.
+2. Upload each turbine's CSV in **Measurement files**, or copy the original
+   files to `data/raw/turbine_1.csv` and `data/raw/turbine_2.csv`.
+3. Choose the issue date/time in UTC, forecast horizon, and turbines. For the
+   case example use **February 1, 2026 at 00:00 UTC**, **24 hours**, and both turbines.
+4. Review timestamp settings in **Optional settings**, then tick **Use these
+   timestamp assumptions**. The supplied files do not declare their timezone
+   or whether timestamps mark interval starts/ends; confirm these with organizers.
+5. Click **Generate forecast**.
+
+The app averages complete groups of six ten-minute readings, uses only
+measurements available by the issue time, retrieves eligible original NOAA
+weather, and runs the configured numerical model. A first 24-hour weather
+request transfers about 67 MB; 48 hours is about 135 MB. Internet is required
+for the automatic NOAA provider, including metadata checks on cached runs.
+A matching **weather.json** upload allows the forecast to run from local inputs.
+
+Raw CSVs, weather caches, model artifacts, and generated runs are ignored by Git.
+Teammates and reviewers must supply their own measurement copies for real runs.
+
+## Read the output
+
+- **Chart:** a distinct color and line style for each turbine, UTC timestamps,
+  and a labeled power axis. Each point represents the hour ending at that time.
+- **Summary:** each turbine's average and peak predicted normalized power.
+- **Hourly values:** the same predictions in a compact table.
+- **Forecast CSV:** numerical predictions with turbine, issue time, valid time,
+  lead hours, and optional model quantiles.
+- **Full report ZIP:** forecast, input assumptions, weather evidence, workflow
+  trace, model identity, and response metadata.
+
+Outputs are also saved in a new directory under `runs/application/` for each run.
+Changing controls does not change a saved result: generate again to update it.
+The page labels results from an earlier configuration until you do so.
+
+These are **normalized values**. Their normalization definition and turbine
+capacity are needed before conversion to MW. The supplied CSVs end on January
+31, 2026 and contain no February targets, so February accuracy is not yet known.
+
+## Prediction model and optional AI
+
+The default **empirical baseline** learns average power in wind-speed bins for
+each turbine, then uses forecast wind to predict power. It is a runnable baseline;
+its forecasting accuracy needs chronological evaluation. Wind from a coarse
+weather grid can differ from measured turbine wind.
+
+A teammate model is enabled by setting `WIND_MODEL_FACTORY`, `WIND_MODEL_PATH`,
+and `WIND_MODEL_METADATA` in the environment or local `.env`. The factory loads
+an artifact with matching metadata and a training cutoff no later than the
+forecast issue. See the [model contract and Python examples](docs/application_io.md#person-2-deliver-the-model).
+
+OpenAI is optional. Copy `.env.example` to `.env`, fill `OPENAI_API_KEY` and
+`OPENAI_MODEL`, then enable **Use OpenAI agent** in Optional settings. The agent
+coordinates the guarded Python steps and adds commentary; predictions come
+from the numerical model. Each run permits at most eight API calls and 900 output
+tokens per call. API failures fall back to Python. Keep `.env` out of Git.
+NVIDIA Brev and FourCastNet are optional model-team integrations.
+
+## Python and batch use
 
 ```bash
+# Offline forecast
 python scripts/run_forecast.py --config examples/fixture_request.json
+
+# Real forecast: first edit paths and timestamp assumptions in your config
+python scripts/run_forecast.py --config my_real_request.json
+
+# Rolling replay, including the January 31 issue
+python scripts/run_forecast.py --config my_real_request.json \
+  --replay-start 2026-01-31T00:00:00Z \
+  --replay-end 2026-02-28T00:00:00Z --step-hours 24
 ```
 
-## Run with the supplied data
+Start a real config by copying `examples/historical_request.json`. Replay keeps
+all issue times and creates a provisional February export with coverage gaps
+reported. Confirm the submission format and schedule with organizers. Batch
+replay uses the local controller and can download several GB of weather.
 
-Upload each organizer CSV into its turbine slot in the application, or keep
-local copies at:
+## Project guide
 
-```text
-data/raw/turbine_1.csv
-data/raw/turbine_2.csv
+| File | Purpose |
+|---|---|
+| [app.py](app.py) | Website and user controls |
+| [Website guide](docs/website_guide.md) | Button-by-button instructions and chart interpretation |
+| [Application I/O](docs/application_io.md) | Python inputs/outputs and teammate contracts |
+| [Architecture](docs/architecture.md) | Workflow, modules, and time checks |
+| [Dataset profile](docs/dataset_profile.md) | Measured CSV coverage and missing data |
+| [Weather integration](docs/data.md#integration-after-merging-the-team-branches) | Person 1's app-compatible weather export |
+| [Model adapter example](examples/team_model.py) | Person 2's model factory interface |
+
+Person 1 supplies data/weather evidence; Person 2 supplies the fitted model and
+validation; Person 3 owns application integration. Follow [AGENTS.md](AGENTS.md)
+when contributing. The original brief is in `docs/HackAlem AI_ Agentic AI Case.pdf`.
+
+## Checks
+
+```bash
+python -m unittest discover -s tests -v
+python -m unittest discover -s src/wind_forecast/data/tests -v
+python -m unittest discover -s src/wind_forecast/weather/tests -v
 ```
 
-Set the export's timezone, whether its ten-minute timestamps label interval
-starts or ends, and the reporting delay. Acknowledging these assumptions records
-your choice; it does **not** establish organizer confirmation. The attachments
-themselves do not supply those conventions.
-
-Choose a historical issue time, turbines, and horizon. The real workflow uses
-the original NOAA GFS archive by default, with a local cache. Your teammate can
-instead supply canonical weather bundles or a configured Python provider. The
-first real run downloads forecast fields and can take longer than a fixture.
-See [weather archive behavior](docs/weather_archive.md). Person 1's merged
-provider also exports app-compatible `weather.json` bundles; follow the
-[mapping and export instructions](docs/data.md#integration-after-merging-the-team-branches).
-
-Without a configured teammate model, the application fits the included empirical
-wind-to-power baseline using only observations eligible at the issue time. A
-teammate's fitted model replaces it through the documented factory interface.
-Model training, including fitted transformations, must obey the same cutoff as
-inference inputs.
-
-The supplied CSVs actually end on **January 31, 2026**, although their filenames
-mention February 28. They contain no February targets for scoring. Read the
-[measured dataset profile](docs/dataset_profile.md) before choosing a replay or
-claiming accuracy.
-
-For command-line use, copy `examples/historical_request.json` to your own JSON
-configuration, set the agreed conventions, and acknowledge the assumptions.
-The supplied example starts with acknowledgment disabled. Run it with
-`python scripts/run_forecast.py --config my_real_request.json`.
-
-## Input and output
-
-| Input | What it controls |
-|---|---|
-| UTC issue time | Simulated time when the forecast is made |
-| `T1`, `T2`, or both | Per-turbine output selection |
-| 24 or 48 hours | Number of future hourly intervals per turbine |
-| CSVs and timestamp assumptions | Eligible historical measurements |
-| Weather provider or bundle files | Future meteorological forecast inputs |
-| Optional model artifact and metadata | Team model replacing the empirical baseline |
-
-A run returns a state (`completed`, `blocked`, or `failed`), forecast rows when
-available, a quality/provenance report, a summary, a workflow trace, and a new
-artifact directory. Forecasts retain issue time, turbine, valid time, lead, and
-normalized-power prediction. Uncertainty columns are populated only if the model
-supplies them. Capacity and normalization details remain unconfirmed, so the
-application does not convert results to MW/MWh or claim a farm total.
-
-[Application inputs, outputs, examples, and teammate handoff](docs/application_io.md)
-is the main operating guide. [Architecture](docs/architecture.md) explains the
-module boundaries and eligibility checks.
-
-## Team handoff
-
-| Owner | Deliver to the application |
-|---|---|
-| Person 1: data/weather | Confirmed timestamp conventions; complete eligible `WeatherBundle` JSON with original-source evidence, or a `fetch(request)` provider |
-| Person 2: models | Fitted model file, metadata JSON, and trusted Python factory exposing the shared `predict` interface; separate chronological validation results |
-| Person 3: application/integration | Interface, run configuration, eligibility checks, agent controller, exports, replay, and integration of team artifacts |
-
-Each teammate works in their own clone/branch. Keep the records in
-`src/wind_forecast/contracts.py` compatible, and exchange immutable artifacts
-with hashes and training/availability timestamps. Person 3 integrates their
-branches. See [AGENTS.md](AGENTS.md) for repository ownership.
-
-## Optional OpenAI controller
-
-Set `OPENAI_API_KEY` and `OPENAI_MODEL` in the local environment or `.env`, then
-select the OpenAI controller. Choose a model available to your API project.
-Secrets stay outside run configuration and artifacts. The application uses at
-most eight API requests per run with at most 900 output tokens per request;
-actual charges depend on model and token usage. The run report records usage.
-No paid OpenAI calls are needed for the deterministic workflow.
-
-OpenAI coordinates `fetch → audit → predict → inspect → save` and can explain
-returned summaries. Python controls tool arguments, eligibility checks,
-numerical predictions, and saved outputs. Missing keys, unsupported responses,
-or API errors trigger the Python workflow fallback. API commentary is
-explanatory text; `forecast.csv` is the numerical result.
-
-NVIDIA Brev and FourCastNet are optional teammate work. They are not prerequisites
-for the application: any chosen weather model must produce the same eligible
-weather contract, and any power model must satisfy the predictor contract.
-
-## Before submission
-
-Confirm the source timezone/interval convention, target normalization and
-capacity, required issue schedule, submission columns, target aggregation, and
-scoring metric with the organizers. Evaluate the team's model chronologically
-without future observations or forecast releases. February accuracy requires
-separate February labels. The replay export is a provisional format until the
-organizer's submission schema is confirmed.
-
-Keep local CSVs, caches, run artifacts, model files, `.env`, and credentials out
-of Git. Commit code, configuration examples, and reproducibility documentation.
-
-## Verification performed
-
-The offline two-turbine, 48-hour workflow produced 96 synthetic rows. A real
-two-turbine, 24-hour run using the supplied CSVs and the original January 31,
-2026 18Z GFS archive also completed, producing 48 baseline predictions for an
-issue at February 1 `00:00Z`. That run explicitly acknowledged UTC/start labels
-as operator assumptions; their organizer confirmation remains outstanding.
-
-This establishes an end-to-end numerical run and original-weather retrieval.
-No February accuracy claim follows because the attachments have no matching
-targets. No paid OpenAI API calls were made. The Streamlit interface has not
-been manually verified in a browser during this implementation.
+UI regression checks cover a complete two-turbine 48-hour demo, a single turbine,
+changed settings, and required input acknowledgements. All 64 automated checks
+passed after the interface update. The demo and real-data workflows were also
+checked in Chrome. The real browser run produced 48 predictions using the
+supplied CSVs and the January 31 18Z NOAA archive for a February 1 00:00Z issue;
+UTC/start timestamps were recorded as assumptions. These checks establish
+execution and UI behavior; forecasting accuracy still requires held-out targets.
+Paid OpenAI orchestration has not been exercised against the live API.
