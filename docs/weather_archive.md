@@ -40,8 +40,13 @@ grid cell; a weather grid is not a measurement at the turbine.
 
 ## Selection and numerical output
 
-The provider selects the most recent 00Z/06Z/12Z/18Z initialization at least six
-hours before `issue_time`. For a 2026-02-01 00:00Z issue, this is 2026-01-31 18Z.
+The provider checks the most recent 00Z/06Z/12Z/18Z initialization at or before
+`issue_time`, then earlier cycles, and selects the newest complete eligible
+cycle. Up to four candidates are checked by default. Small NOAA S3 listings
+must contain every required GRIB and index with source timestamps at or before
+the issue time. A delayed or partly published cycle is skipped. No fixed
+publication delay is assumed. For a 2026-02-01 00:00Z issue, the verified
+selection is 2026-01-31 18Z.
 Valid times are strictly issue +1 through issue +24 or +48 hours. The GFS forecast
 lead therefore begins at f007 in this example.
 
@@ -84,10 +89,13 @@ are rejected. Only after all checks pass does the bundle carry
 `provenance_status="verified_original"` and `is_synthetic=False`.
 
 No observations, reanalysis, synthetic data, newer weather run or today's
-forecast are substituted when the archive is unavailable. The selected six-hour
-cycle is conservative; if its publication was delayed, the request fails instead
-of silently relaxing the as-of requirement. The app can display the reason and
-let the operator retry or supply a separately verified compatible bundle.
+forecast are substituted when the archive is unavailable. Delayed publication
+causes an earlier cycle to be considered with the same strict availability
+checks. If no candidate covers the entire horizon, the request fails. The app
+displays the reason so the operator can retry or supply a separately verified
+compatible bundle. The listing's version signature must also match the actual
+fetched objects, preventing a source revision during retrieval from being
+silently treated as the version originally discovered.
 
 ## Local cache and audit files
 
@@ -101,6 +109,10 @@ On a repeated request, the provider rechecks source HEAD and index metadata and
 reuses cached field bytes only when their descriptor and SHA256 agree. Corrupted
 cache entries fail explicitly. Cache manifests are local audit artifacts; keep
 them together with forecast outputs when transferring evidence to teammates.
+The source manifest also includes the discovery signature and rejected cycle
+reasons. `NoaaArchiveProvider.probe(request).to_dict()` exposes the stable
+metadata identity for automatic refresh without downloading weather fields;
+see [weather_sources.md](weather_sources.md).
 
 Requests use at most four workers by default (configurable from one to eight), a
 20-second timeout per HTTP operation and three attempts for transient transport

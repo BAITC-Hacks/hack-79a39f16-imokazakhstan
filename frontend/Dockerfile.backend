@@ -5,9 +5,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN python -m pip install --no-cache-dir ".[app]" \
+RUN python -m pip install --no-cache-dir ".[app,openai,weather,ml]" \
     && useradd --create-home --uid 10001 wind
 COPY app.py ./
+COPY .streamlit/config.toml ./.streamlit/config.toml
+COPY docs/website_guide.md ./docs/website_guide.md
+# The application writes uploads, NOAA caches, and reports at these paths.
+# Source code stays read-only to the runtime user; measurements arrive at runtime.
+RUN mkdir -p data/raw data/processed data/cache/uploads data/cache/weather runs/application \
+    && chown -R wind:wind data runs
 USER wind
 EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \

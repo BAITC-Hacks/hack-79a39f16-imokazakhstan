@@ -1,0 +1,9 @@
+{
+  "issue_time": "2026-02-01T00:00:00+00:00",
+  "turbine_ids": ["T1", "T2"],
+  "horizon_hours": 48,
+  "mode": "fixture",
+  "weather_source": "mock",
+  "controller": "deterministic",
+  "output_root": "runs/application"
+}

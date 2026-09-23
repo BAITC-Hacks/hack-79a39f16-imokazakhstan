@@ -146,18 +146,42 @@ class WorkflowSession:
                 if any(v is not None for v in quantiles):
                     if any(v is None or isinstance(v,bool) or not isfinite(v) for v in quantiles) or quantiles != sorted(quantiles):
                         raise ValueError("provide all finite ordered p10/p50/p90 values, or leave all empty")
-            if any(not 0 <= r.prediction <= 1 for r in result.rows):
-                warnings.append("Predictions outside observed normalized range [0,1]; values were not clipped.")
-            self.result = replace(result, warnings=tuple(dict.fromkeys(warnings)))
             by_turbine = {}
+            findings = []
             for turbine in q.turbine_ids:
                 rows = sorted((r for r in result.rows if r.turbine_id == turbine), key=lambda r:r.valid_time)
                 values = [r.prediction for r in rows]
+                history = [r for r in self.observations if r.turbine_id == turbine
+                           and r.wind_ms is not None and r.power_norm is not None
+                           and r.quality_flag == "ok"]
+                winds = [r.wind_ms for r in history if r.wind_ms is not None]
+                powers = [r.power_norm for r in history if r.power_norm is not None]
+                weather = [r for r in self.weather.rows if r.turbine_id == turbine]
+                outside_wind = sum(not min(winds) <= r.wind_ms <= max(winds) for r in weather) if winds else 0
+                outside_power = sum(not min(powers) <= p <= max(powers) for p in values) if powers else 0
+                latest = max((r.observed_at for r in history), default=None)
+                age = (q.issue_time - latest).total_seconds() / 3600 if latest else None
+                peak = max(rows, key=lambda row: row.prediction)
                 by_turbine[turbine] = {"min": min(values), "max": max(values),
                     "mean": sum(values)/len(values),
-                    "largest_hourly_change": max((abs(b-a) for a,b in zip(values, values[1:])), default=0)}
+                    "peak_hour_end": peak.valid_time.isoformat(),
+                    "largest_hourly_change": max((abs(b-a) for a,b in zip(values, values[1:])), default=0),
+                    "latest_observation_age_hours": age,
+                    "forecast_wind_outside_training_hours": outside_wind,
+                    "predictions_outside_training_range": outside_power}
+                if outside_wind:
+                    findings.append(f"{turbine}: {outside_wind} forecast hours have wind outside the measured training range.")
+                if outside_power:
+                    findings.append(f"{turbine}: {outside_power} predictions are outside its measured training power range; values were not clipped.")
+                if age is not None and age > 24:
+                    findings.append(f"{turbine}: the latest eligible measurement is {age:.0f} hours old; recent operating changes are unknown.")
+            warnings.extend(findings)
+            self.result = replace(result, warnings=tuple(dict.fromkeys(warnings)),
+                                  status="degraded" if findings else result.status)
             self.summary = {"forecast_rows": len(result.rows), "unit": "normalized_active_power",
-                            "per_turbine": by_turbine, "warnings": list(self.result.warnings)}
+                            "per_turbine": by_turbine, "findings": findings,
+                            "analysis_status": "review" if findings else "checks_passed",
+                            "warnings": list(self.result.warnings)}
             self.stage = 4
             self.record("inspect_forecast", "ok", "Coverage, numeric values and quantiles passed")
         return self.summary

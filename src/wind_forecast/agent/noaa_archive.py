@@ -21,8 +21,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from wind_forecast.contracts import ForecastRequest, WeatherBundle, WeatherPoint
+
+if TYPE_CHECKING:
+    from wind_forecast.agent.noaa_updates import NoaaCycleSnapshot
 
 BASE_URL = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 MAX_FIELD_BYTES = 16 * 1024 * 1024
@@ -218,12 +222,14 @@ class NoaaArchiveProvider:
 
     def __init__(
         self, coordinates: dict[str, tuple[float, float]], cache_dir: Path | str,
-        wind_height_m: int = 100, max_workers: int = 4,
+        wind_height_m: int = 100, max_workers: int = 4, max_candidate_runs: int = 4,
     ) -> None:
         if wind_height_m not in (10, 100):
             raise ValueError("wind_height_m must be 10 or 100")
         if not 1 <= max_workers <= 8:
             raise ValueError("max_workers must be between 1 and 8")
+        if type(max_candidate_runs) is not int or not 1 <= max_candidate_runs <= 8:
+            raise ValueError("max_candidate_runs must be between 1 and 8")
         for turbine, (latitude, longitude) in coordinates.items():
             if (not turbine or not math.isfinite(latitude) or not math.isfinite(longitude)
                     or not -90 <= latitude <= 90 or not -180 <= longitude <= 180):
@@ -232,6 +238,16 @@ class NoaaArchiveProvider:
         self.cache_dir = Path(cache_dir)
         self.wind_height_m = wind_height_m
         self.max_workers = max_workers
+        self.max_candidate_runs = max_candidate_runs
+
+    def probe(self, request: ForecastRequest) -> NoaaCycleSnapshot:
+        """Metadata-only version check for the same eligible cycle used by fetch."""
+        from wind_forecast.agent.noaa_updates import discover_noaa_cycle
+
+        missing = set(request.turbine_ids) - set(self.coordinates)
+        if missing:
+            raise NoaaArchiveError(f"Missing turbine coordinates: {', '.join(sorted(missing))}")
+        return discover_noaa_cycle(request, max_candidate_runs=self.max_candidate_runs)
 
     def _hour(
         self, request: ForecastRequest, run_init: datetime, valid_time: datetime,
@@ -324,6 +340,7 @@ class NoaaArchiveProvider:
             "forecast_hour": forecast_hour, "valid_time": valid_time.isoformat(),
             "index": {"url": url + ".idx", "last_modified": index_modified.isoformat(),
                       "sha256": index_hash, "etag": index_metadata.get("etag"),
+                      "object_bytes": len(index_data),
                       "cache_file": str(index_path.resolve())},
             "fields": source_fields,
         }
@@ -340,7 +357,8 @@ class NoaaArchiveProvider:
             import eccodes  # noqa: F401
         except ImportError as exc:
             raise NoaaArchiveError('Install the original-weather decoder: pip install -e ".[weather]"') from exc
-        run_init = select_cycle(request.issue_time)
+        snapshot = self.probe(request)
+        run_init = snapshot.run_init_time
         valid_times = [
             request.issue_time + timedelta(hours=lead)
             for lead in range(1, request.horizon_hours + 1)
@@ -352,6 +370,18 @@ class NoaaArchiveProvider:
         retrieved_at = datetime.now(timezone.utc)
         # Keep absolute local paths and retrieval time outside the identity hash.
         sources = [source for _, source, _ in results]
+        from wind_forecast.agent.noaa_updates import NoaaObjectVersion, source_version_signature
+
+        actual_versions = []
+        for source in sources:
+            for obj in (source["fields"][0], source["index"]):
+                actual_versions.append(NoaaObjectVersion(
+                    key=obj["url"].removeprefix(BASE_URL + "/"),
+                    last_modified=datetime.fromisoformat(obj["last_modified"]),
+                    etag=obj["etag"], size=obj["object_bytes"],
+                ))
+        if source_version_signature(run_init, actual_versions) != snapshot.signature:
+            raise NoaaArchiveError("NOAA source version changed after discovery; retry the forecast")
         identity_sources = json.loads(json.dumps(sources))
         for source in identity_sources:
             source["index"].pop("cache_file")
@@ -371,6 +401,7 @@ class NoaaArchiveProvider:
             "issue_time": request.issue_time.isoformat(), "retrieved_at": retrieved_at.isoformat(),
             "available_at": available_at.isoformat(), "sources": sources,
             "availability_policy": "max original S3 GRIB and index Last-Modified; must be <= issue_time",
+            "cycle_selection": {**snapshot.to_dict(), "rejected_cycles": list(snapshot.rejected_cycles)},
             "spatial_method": "nearest grid cell; derived values from original NOAA GRIB2",
         }))
         return WeatherBundle(

@@ -1,8 +1,14 @@
-# Only the existing app and its Python package enter this build context.
+# Only application code, public configuration, and its website guide enter.
 **
 !pyproject.toml
 !README.md
 !app.py
+!.streamlit
+.streamlit/**
+!.streamlit/config.toml
+!docs
+docs/**
+!docs/website_guide.md
 !src
 !src/**
 src/**/__pycache__
@@ -11,4 +17,5 @@ src/**/*.egg-info
 src/wind_forecast/models/artifacts/**
 **/.env
 **/.env.*
+**/secrets.toml
 **/.git

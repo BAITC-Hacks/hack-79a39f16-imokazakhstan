@@ -43,7 +43,12 @@ class RunConfig:
     model_factory: str = ""
     model_path: str = ""
     model_metadata_path: str = ""
+    model_kind: str = "auto"
     controller: str = "deterministic"
+    jev_enabled: bool = False
+    jev_model: str = "jev-1.13.0"
+    operational_notes: tuple[dict, ...] = ()
+    operational_notes_path: str = ""
     output_root: str = "runs/application"
     cache_dir: str = "data/cache/weather"
 
@@ -74,6 +79,17 @@ class RunConfig:
             raise ValueError("fixture mode uses mock weather; use historical/live for real inputs")
         if self.controller not in {"deterministic", "openai"}:
             raise ValueError("controller must be deterministic or openai")
+        if not isinstance(self.jev_enabled, bool):
+            raise ValueError("jev_enabled must be a boolean")
+        if not isinstance(self.jev_model, str) or not self.jev_model.startswith("jev-"):
+            raise ValueError("jev_model must name a TypeSafe Jev model")
+        if not isinstance(self.operational_notes, (list, tuple)):
+            raise ValueError("operational_notes must be a list or tuple")
+        object.__setattr__(self, "operational_notes", tuple(self.operational_notes))
+        if self.operational_notes and self.operational_notes_path:
+            raise ValueError("provide inline operational_notes or operational_notes_path, not both")
+        if self.model_kind not in {"auto", "gradient_boosting", "empirical"}:
+            raise ValueError("model_kind must be auto, gradient_boosting, or empirical")
         if self.wind_height_m not in {10, 100}:
             raise ValueError("wind_height_m must be 10 or 100 for the GFS provider")
         if not self.output_root or not self.cache_dir:
@@ -113,7 +129,7 @@ class RunConfig:
 
 
 def runtime_settings() -> dict[str, str]:
-    """Load local credentials only for an explicitly selected online controller."""
+    """Load host settings; callers decide which optional services are enabled."""
     try:
         from dotenv import load_dotenv
         load_dotenv(Path.cwd() / ".env", override=False)
@@ -121,7 +137,9 @@ def runtime_settings() -> dict[str, str]:
         pass
     return {
         "api_key": os.getenv("OPENAI_API_KEY", ""),
-        "model": os.getenv("OPENAI_MODEL", ""),
+        "model": os.getenv("OPENAI_MODEL", "") or "gpt-4.1-mini",
+        "typesafe_api_key": os.getenv("TYPESAFE_API_KEY", ""),
+        "typesafe_model": os.getenv("TYPESAFE_MODEL", "") or "jev-1.13.0",
         "model_factory": os.getenv("WIND_MODEL_FACTORY", ""),
         "model_path": os.getenv("WIND_MODEL_PATH", ""),
         "model_metadata_path": os.getenv("WIND_MODEL_METADATA", ""),
