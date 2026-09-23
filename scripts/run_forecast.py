@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--replay-start", help="Inclusive ISO timestamp with timezone")
     parser.add_argument("--replay-end", help="Inclusive ISO timestamp with timezone")
     parser.add_argument("--step-hours", type=int, default=24)
+    parser.add_argument("--strict-submission", action="store_true", help="Fail unless February coverage is complete, every issue succeeds, and inputs/results are non-synthetic")
     args = parser.parse_args()
     try:
         config = RunConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
@@ -26,7 +27,7 @@ def main():
             from wind_forecast.agent.replay import run_replay
             replay = run_replay(config,parse_time(args.replay_start),parse_time(args.replay_end),step_hours=args.step_hours)
             print(json.dumps(replay.to_dict(),indent=2,default=str))
-            return 0 if replay.summary["state"] == "completed" else 2
+            return 0 if (replay.summary["submission_check"]["ready"] if args.strict_submission else replay.summary["state"] == "completed") else 2
         run = run_forecast(config)
         print(json.dumps({"state":run.state,"summary":run.summary,"run_dir":str(run.run_dir)},indent=2))
         return 0 if run.state == "completed" else 2

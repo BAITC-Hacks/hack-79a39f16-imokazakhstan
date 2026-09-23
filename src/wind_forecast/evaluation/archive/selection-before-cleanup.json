@@ -1,0 +1,13 @@
+{
+  "selected": "catboost_neighbor",
+  "alternative": "patch_gpu64",
+  "reason": "Best single-model development RMSE; ensemble gain only 0.19% overall does not justify added runtime complexity.",
+  "gpu_instance": "imokazakhstan",
+  "gpu_instance_action": "Kept running at explicit user request; no delete command sent.",
+  "price_usd_hour": 4.224,
+  "gpu_suite_seconds": 355.182200312,
+  "gpu_suite_seconds_cost_estimate_usd": 0.4167471150327467,
+  "actual_invoice_usd": null,
+  "weights_backed_up": true,
+  "gpu_archive_sha256": "56c0014a5fac1c0126665b1461f6e73aa1416f2696d8791bc4a04f23463ede11"
+}

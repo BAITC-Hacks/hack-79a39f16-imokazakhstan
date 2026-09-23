@@ -11,6 +11,10 @@ mode=${DASHBOARD_DATA_MODE:-demo}
 backend_url=${DASHBOARD_BACKEND_URL:-}
 upstream=${DASHBOARD_API_UPSTREAM:-}
 resolver=${DASHBOARD_DNS_RESOLVER:-127.0.0.11}
+archive_date=${DASHBOARD_DEFAULT_DATE:-}
+if [ -n "$archive_date" ]; then
+    jq -en --arg value "$archive_date" '$value | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")' >/dev/null || fail "Invalid archive date"
+fi
 
 case "$mode" in
     demo|api) ;;
@@ -63,8 +67,8 @@ EOF
 fi
 
 # jq escapes JSON strings; environment values are never evaluated as shell code.
-jq -n --arg mode "$mode" --arg backend "$backend_url" \
-  '{dataMode: $mode, apiUrl: "/api/dashboard", backendUrl: $backend}' \
+jq -n --arg mode "$mode" --arg backend "$backend_url" --arg date "$archive_date" \
+  '{dataMode: $mode, apiUrl: "/api/dashboard", backendUrl: $backend} + (if $date == "" then {} else {defaultDate: $date} end)' \
   > /tmp/runtime-config.json
 
 exec "$@"

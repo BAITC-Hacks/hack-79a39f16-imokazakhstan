@@ -29,6 +29,7 @@ class S3Object:
     key: str
     last_modified: datetime
     size: int
+    etag: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,7 @@ def list_run_objects(
                 key,
                 require_utc(datetime.fromisoformat(modified), "LastModified"),
                 int(size),
+                entry.findtext(f"{_S3_NAMESPACE}ETag") or "",
             )
         token = document.findtext(f"{_S3_NAMESPACE}NextContinuationToken")
         if not token:
@@ -180,7 +182,17 @@ def fetch_index_fields(
     """Return SHA-256 and selected ranges for one index after size validation."""
     if evidence.index.size > 100_000:
         raise ValueError("GFS index exceeds bounded probe size")
-    payload = get_bytes(f"{base_url}/{evidence.index.key}")
+    if get_bytes is _get_bytes:
+        from urllib.request import Request
+        from email.utils import parsedate_to_datetime
+        if not evidence.index.etag: raise ValueError("Index version ETag is missing")
+        request = Request(f"{base_url}/{evidence.index.key}", headers={"If-Match": evidence.index.etag})
+        with urlopen(request, timeout=20) as response:
+            if response.headers.get("ETag") != evidence.index.etag or parsedate_to_datetime(response.headers.get("Last-Modified", "")) != evidence.index.last_modified:
+                raise ValueError("Index version changed since availability probe")
+            payload = response.read(100_001)
+    else:
+        payload = get_bytes(f"{base_url}/{evidence.index.key}")
     if len(payload) != evidence.index.size:
         raise ValueError("GFS index size changed since listing")
     return hashlib.sha256(payload).hexdigest(), parse_required_index(

@@ -117,7 +117,7 @@ with st.container(border=True):
         help="The day the forecast is issued. February 1, 2026 is a useful case example.",
     )
     issue_hour = hour.selectbox(
-        "Time (UTC)", range(24), format_func=lambda h: f"{h:02d}:00", key="issue_hour", disabled=live
+        "Time (UTC)", range(24), format_func=lambda h: f"{h:02d}:00", key="issue_hour", disabled=live, index=1 if real_data else 0
     )
     horizon = length.selectbox(
         "Predict next", (24, 48), format_func=lambda h: f"{h} hours", key="horizon"
@@ -130,20 +130,21 @@ with st.container(border=True):
     ]
     forecast_issue = (datetime.now(UTC).replace(minute=0, second=0, microsecond=0) if live
                       else datetime.combine(issue_date, datetime.min.time(), tzinfo=UTC).replace(hour=issue_hour))
+    input_turbines = ("T1", "T2") if real_data else turbines
     uploads = {}
     if real_data:
-        missing_local = [t for t in turbines if not local_paths[t].is_file()]
+        missing_local = [t for t in input_turbines if not local_paths[t].is_file()]
         with st.expander("Measurement files", expanded=bool(missing_local)):
             st.caption("One organizer CSV per turbine. Upload a file to replace its project copy.")
-            for column, turbine in zip(st.columns(len(turbines)), turbines):
+            for column, turbine in zip(st.columns(len(input_turbines)), input_turbines):
                 with column:
                     uploads[turbine] = st.file_uploader(
                         TURBINE_NAMES[turbine], type="csv", key=f"csv_{turbine}"
                     )
                     if uploads[turbine] is None and local_paths[turbine].is_file():
                         st.caption(f"Using project file: {local_paths[turbine].name}")
-        ready = sum(uploads[t] is not None or local_paths[t].is_file() for t in turbines)
-        st.caption(f"Measurements ready: {ready} of {len(turbines)} turbines.")
+        ready = sum(uploads[t] is not None or local_paths[t].is_file() for t in input_turbines)
+        st.caption(f"Measurements ready: {ready} of {len(input_turbines)} turbines.")
 
     zone, interval, delay = "UTC", "start", 0
     weather_choice, weather_file, wind_height = "NOAA archive (automatic)", None, 100
@@ -163,7 +164,7 @@ with st.container(border=True):
                 "CSV timezone",
                 tuple(zone_labels),
                 format_func=zone_labels.get,
-                key="source_zone",
+                key="source_zone", index=1,
                 help="Use the CSV export's timezone; it is not written in the supplied files.",
             )
             interval = b.selectbox(
@@ -191,8 +192,8 @@ with st.container(border=True):
             )
             model_choice = b.selectbox(
                 "Prediction model",
-                ("Gradient boosting ML", "Empirical baseline", "Team model") if team_ready
-                else ("Gradient boosting ML", "Empirical baseline"), key="model_choice",
+                ("Local saved models (offline)", "Gradient boosting ML", "Empirical baseline", "Team model") if team_ready
+                else ("Local saved models (offline)", "Gradient boosting ML", "Empirical baseline"), key="model_choice",
                 help="ML trains on your eligible measurement history and reports chronological validation.",
             )
             if weather_choice == "Upload weather file":
@@ -285,20 +286,24 @@ with st.container(border=True):
             + (
                 "Empirical baseline · learns average power at each wind speed."
                 if baseline
+                else "Saved CatBoost power + ExtraTrees wind, offline." if model_choice == "Local saved models (offline)"
                 else "Configured team model." if team_model
                 else "Gradient boosting ML · learns from wind, temperature and measured power."
             )
         )
 
+    local_history = real_data and model_choice == "Local saved models (offline)"
+    if local_history:
+        st.caption("Saved CatBoost power + ExtraTrees wind. Daily issue 06:00 UTC+5; no weather/API requests. Both CSVs are needed.")
     problems = []
     if note_problem:
         problems.append(note_problem)
     if real_data:
-        if any(uploads[t] is None and not local_paths[t].is_file() for t in turbines):
+        if any(uploads[t] is None and not local_paths[t].is_file() for t in input_turbines):
             problems.append("Add a measurement CSV for each selected turbine.")
         if not acknowledged:
             problems.append("Confirm the timestamp assumptions above.")
-        if weather_choice == "Upload weather file" and weather_file is None:
+        if not local_history and weather_choice == "Upload weather file" and weather_file is None:
             problems.append("Add a weather JSON file in Optional settings.")
     signature_inputs = {
             "source": source,
@@ -328,7 +333,7 @@ with st.container(border=True):
                 t: hashlib.sha256(uploads[t].getvalue()).hexdigest()
                 if uploads[t] is not None
                 else file_identity(local_paths[t])
-                for t in turbines
+                for t in input_turbines
             }
             if real_data
             else None,
@@ -342,7 +347,7 @@ with st.container(border=True):
     control_inputs = dict(signature_inputs)
     control_inputs["sources"] = {
         t: signature_inputs["sources"][t] if uploads[t] is not None else str(local_paths[t])
-        for t in turbines
+        for t in input_turbines
     } if real_data else None
     control_inputs["model_files"] = (runtime["model_path"], runtime["model_metadata_path"]) if team_model else None
     control_signature = fingerprint(control_inputs)
@@ -380,7 +385,7 @@ if generate:
         with st.spinner("Preparing measurements, fetching weather, and predicting power…"):
             paths = {}
             if real_data:
-                for turbine in turbines:
+                for turbine in input_turbines:
                     if uploads[turbine] is not None:
                         raw = uploads[turbine].getvalue()
                         path = ROOT / "data/cache/uploads" / f"{turbine}-{hashlib.sha256(raw).hexdigest()}.csv"
@@ -398,7 +403,7 @@ if generate:
                 else ""
             )
             config = RunConfig(
-                issue_time=forecast_issue,
+                issue_time=(forecast_issue.replace(hour=1) if local_history and live else forecast_issue),
                 turbine_ids=turbines,
                 horizon_hours=horizon,
                 mode=("live" if live else "historical") if real_data else "fixture",
@@ -408,15 +413,15 @@ if generate:
                 reporting_delay_minutes=delay,
                 assumptions_confirmed=acknowledged,
                 observation_policy=policy,
-                weather_source=("bundles" if weather_path else "noaa_gfs") if real_data else "mock",
+                weather_source="none" if local_history else (("bundles" if weather_path else "noaa_gfs") if real_data else "mock"),
                 weather_path=weather_path,
                 wind_height_m=wind_height,
-                model_kind="empirical" if baseline or not real_data else "gradient_boosting",
+                model_kind="local_history" if local_history else ("empirical" if baseline or not real_data else "gradient_boosting"),
                 model_factory=runtime["model_factory"] if team_model else "",
                 model_path=runtime["model_path"] if team_model else "",
                 model_metadata_path=runtime["model_metadata_path"] if team_model else "",
-                controller="openai" if use_ai and ai_ready else "deterministic",
-                jev_enabled=use_jev,
+                controller="openai" if use_ai and ai_ready and not local_history else "deterministic",
+                jev_enabled=use_jev and not local_history,
                 jev_model=runtime.get("typesafe_model", "jev-1.13.0") if use_jev else "jev-1.13.0",
                 operational_notes=tuple(operational_notes),
                 output_root=str(ROOT / "runs/application"),
@@ -521,7 +526,7 @@ else:
             "Units follow the supplied normalization; converting to MW requires its definition and turbine capacity."
         )
         if frame.p10.notna().any():
-            st.caption("Shaded bands show the model's 10th–90th percentile range.")
+            st.caption("Shaded bands are approximate empirical 80% prediction intervals." if run.report.get("wind_forecast") else "Shaded bands show the model's 10th–90th percentile range.")
         if (
             not result.is_synthetic
             and run.report.get("evaluation", {}).get("state") == "no_ground_truth"
@@ -529,6 +534,13 @@ else:
             st.caption(
                 "Accuracy is not yet available: there are no measured targets for this forecast window."
             )
+        if run.report.get("wind_forecast"):
+            import pandas as pd
+            wind_frame = pd.DataFrame(run.report["wind_forecast"])
+            wind_frame["valid_time"] = pd.to_datetime(wind_frame["valid_time"], utc=True)
+            st.subheader("Wind speed forecast · m/s")
+            st.line_chart(wind_frame.pivot(index="valid_time", columns="turbine_id", values="wind_ms"))
+            st.download_button("Download wind CSV", (run.run_dir / "wind.csv").read_bytes(), "wind.csv", "text/csv")
         with st.expander("View hourly values"):
             st.dataframe(
                 hourly_table(frame),

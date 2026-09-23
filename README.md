@@ -155,7 +155,14 @@ Copy `.env.example` to an ignored local `.env` and fill in the TypeSafe key, or 
 the variable in the server environment. `TYPESAFE_MODEL` optionally overrides the
 default `jev-1.13.0`. This is separate from `OPENAI_API_KEY`; the repository does
 not include a shared credential. Restart Streamlit after changing an already loaded
-key. In Streamlit, select **Your measurements**, open
+key. For example, create `.env` in the repository root with:
+
+```dotenv
+TYPESAFE_API_KEY=your_team_typesafe_key
+TYPESAFE_MODEL=jev-1.13.0
+```
+
+Jev does not require an OpenAI key. In Streamlit, select **Your measurements**, open
 **Optional settings**, and enable **Jev: review the next 3 hours** before you
 generate a weather-driven forecast. The offline **Local saved models** route does
 not invoke Jev. You can add an operator note with its affected turbines,

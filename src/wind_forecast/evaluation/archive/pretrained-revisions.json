@@ -1,0 +1,17 @@
+[
+  {
+    "repo": "amazon/chronos-bolt-tiny",
+    "name": "bolt-tiny",
+    "revision": "a0e552de83495b5c28c14c71c374f3e33280b340"
+  },
+  {
+    "repo": "autogluon/chronos-2-small",
+    "name": "chronos2-small",
+    "revision": "ddec01313e50b6bc58ebaa92ede81bc24a3d9f9a"
+  },
+  {
+    "repo": "amazon/chronos-2",
+    "name": "chronos2-base",
+    "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c"
+  }
+]

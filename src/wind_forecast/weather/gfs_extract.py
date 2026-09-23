@@ -73,13 +73,20 @@ def _cache_bytes(cache_dir: Path, payload: bytes) -> str:
     return digest
 
 
-def _read_range(url: str, start: int, end: int, *, timeout: int = 30) -> bytes:
+def _read_range(url: str, start: int, end: int, *, timeout: int = 30, evidence=None) -> bytes:
     if end < start or end - start + 1 > 4_000_000:
         raise ValueError("invalid or excessive GRIB message range")
-    request = Request(url, headers={"Range": f"bytes={start}-{end}"})
+    if evidence is None or not evidence.etag:
+        raise ValueError("Version-bound GRIB availability evidence is required")
+    request = Request(url, headers={"Range": f"bytes={start}-{end}", "If-Match": evidence.etag})
     with urlopen(request, timeout=timeout) as response:
         if response.status != 206:
             raise ValueError("GRIB source did not honor byte-range request")
+        from email.utils import parsedate_to_datetime
+        if (response.headers.get("ETag") != evidence.etag
+            or response.headers.get("Content-Range") != f"bytes {start}-{end}/{evidence.size}"
+            or parsedate_to_datetime(response.headers.get("Last-Modified", "")) != evidence.last_modified):
+            raise ValueError("GRIB object version or range changed since availability evidence")
         payload = response.read(4_000_001)
     if len(payload) != end - start + 1:
         raise ValueError("GRIB byte range length mismatch")
@@ -91,7 +98,9 @@ def _decode_message(
     field_name: str,
     valid_time: datetime,
     coordinates: dict[str, tuple[float, float]],
+    run_init_time: datetime | None = None,
 ) -> dict[str, dict[str, float]]:
+    if run_init_time is None: raise ValueError("Forecast initialization is required")
     expected_short_name, expected_height = _FIELD_KEYS[field_name]
     # The pip-provided ecCodes DLL on Windows may be built without thread safety.
     # Network transfers run concurrently, while C-library decoding is serialized.
@@ -122,12 +131,22 @@ def _decode_message(
                 int(valid_time.strftime("%H%M")),
             ):
                 raise ValueError(f"GRIB validity time mismatch for {field_name}")
+            expected = {"edition":2,"centre":"kwbc","discipline":0,"stepType":"instant",
+                "dataDate":int(run_init_time.strftime("%Y%m%d")),"dataTime":int(run_init_time.strftime("%H%M")),
+                "gridType":"regular_ll","iDirectionIncrementInDegrees":.25,"jDirectionIncrementInDegrees":.25,
+                "parameterCategory":0 if field_name=='temp_2m_k' else 2,
+                "parameterNumber":{"temp_2m_k":0,"u_10m_ms":2,"v_10m_ms":3}[field_name]}
+            for key,value in expected.items():
+                if eccodes.codes_get(handle,key)!=value:raise ValueError(f"GRIB source/grid metadata mismatch: {key}")
+            missing=float(eccodes.codes_get(handle,"missingValue"))
             output: dict[str, dict[str, float]] = {}
             for turbine_id, (latitude, longitude) in coordinates.items():
                 (match,) = eccodes.codes_grib_find_nearest(handle, latitude, longitude)
                 value = float(match["value"])
-                if not math.isfinite(value):
+                if not math.isfinite(value) or value == missing or (not 150 < value < 350 if field_name == "temp_2m_k" else abs(value) > 150):
                     raise ValueError(f"non-finite GRIB value for {turbine_id}")
+                if any(not math.isfinite(float(match[k])) for k in ('lat','lon','distance')) or not 0<=float(match['distance'])<=50:
+                    raise ValueError("Invalid nearest grid geometry")
                 output[turbine_id] = {
                     "value": value,
                     "grid_latitude": float(match["lat"]),
@@ -150,10 +169,15 @@ def _extract_lead(
     field_values: dict[str, dict[str, dict[str, float]]] = {}
     messages: list[dict[str, object]] = []
     for field in fields:
-        payload = read_range(f"{S3_BASE_URL}/{evidence.grib.key}", field.byte_start, field.byte_end)
+        run_init = evidence.valid_time - timedelta(hours=evidence.source_lead_hours)
+        from wind_forecast.weather.archive_probe import gfs_run_prefix
+        if evidence.grib.key != f"{gfs_run_prefix(run_init)}{evidence.source_lead_hours:03d}":
+            raise ValueError("GRIB source key does not match forecast initialization")
+        payload = read_range(f"{S3_BASE_URL}/{evidence.grib.key}", field.byte_start, field.byte_end,
+                             **({"evidence": evidence.grib} if read_range is _read_range else {}))
         digest = _cache_bytes(cache_dir, payload)
         field_values[field.name] = _decode_message(
-            payload, field.name, evidence.valid_time, coordinates
+            payload, field.name, evidence.valid_time, coordinates, run_init
         )
         messages.append(
             {
@@ -177,6 +201,8 @@ def _extract_lead(
         "source_lead_hours": evidence.source_lead_hours,
         "grib_key": evidence.grib.key,
         "grib_size": evidence.grib.size,
+        "grib_etag": evidence.grib.etag,
+        "index_etag": evidence.index.etag,
         "grib_last_modified": evidence.grib.last_modified.isoformat(),
         "index_key": evidence.index.key,
         "index_size": evidence.index.size,

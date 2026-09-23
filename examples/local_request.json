@@ -1,0 +1,14 @@
+{
+  "issue_time": "2026-02-01T06:00:00+05:00",
+  "turbine_ids": ["T1", "T2"],
+  "horizon_hours": 48,
+  "mode": "historical",
+  "model_kind": "local_history",
+  "weather_source": "none",
+  "data_paths": {"T1": "data/raw/turbine_1.csv", "T2": "data/raw/turbine_2.csv"},
+  "source_timezone": "Etc/GMT-5",
+  "interval_label": "start",
+  "assumptions_confirmed": true,
+  "observation_policy": "available",
+  "output_root": "runs/application"
+}
