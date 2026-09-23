@@ -30,10 +30,16 @@ class ForecastRequest:
         object.__setattr__(self, "issue_time", require_utc(self.issue_time, "issue_time"))
         if any((self.issue_time.minute, self.issue_time.second, self.issue_time.microsecond)):
             raise ValueError("issue_time must align to a UTC hour")
-        if self.horizon_hours not in (24, 48):
+        if type(self.horizon_hours) is not int or self.horizon_hours not in (24, 48):
             raise ValueError("horizon_hours must be 24 or 48")
         if not self.turbine_ids:
             raise ValueError("at least one turbine_id is required")
+        if any(not isinstance(t, str) or not t.strip() for t in self.turbine_ids):
+            raise ValueError("turbine_ids must be nonempty strings")
+        if self.mode not in {"fixture", "historical", "live"}:
+            raise ValueError("unsupported forecast mode")
+        if self.observation_policy not in {"frozen_jan31", "available"}:
+            raise ValueError("unsupported observation policy")
         if len(set(self.turbine_ids)) != len(self.turbine_ids):
             raise ValueError("turbine_ids must be unique")
 

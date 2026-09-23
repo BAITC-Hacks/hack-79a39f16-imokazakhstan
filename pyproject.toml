@@ -4,17 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hackalem-wind-forecast"
-version = "0.1.0"
-description = "Agentic wind-power forecasting hackathon starter"
+version = "0.2.0"
+description = "Auditable agentic wind-power forecasting application"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["python-dotenv>=1.0,<2"]
 
 [project.optional-dependencies]
 app = ["streamlit>=1.40,<2"]
-openai = ["openai>=1.60,<3"]
+openai = ["openai>=2,<3"]
+weather = ["eccodes>=2.39,<3"]
 dev = ["ruff>=0.9,<1"]
-all = ["streamlit>=1.40,<2", "openai>=1.60,<3", "ruff>=0.9,<1"]
+all = ["streamlit>=1.40,<2", "openai>=2,<3", "eccodes>=2.39,<3", "ruff>=0.9,<1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
