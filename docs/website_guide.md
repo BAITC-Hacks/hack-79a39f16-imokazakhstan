@@ -1,7 +1,8 @@
 # Using the WindScope website
 
 The page has two sections: **Set up your forecast** and **Read your forecast**.
-You choose the inputs, click one button, and see a chart and downloads below.
+Choose inputs, click one button, and see a chart and downloads below. Automatic
+updates can keep a real forecast current while the page is open.
 
 ## Try it immediately
 
@@ -17,20 +18,66 @@ No upload, API key, or internet is required after installation.
    **Turbine 1** and turbine 2 CSV into **Turbine 2**. If project copies exist,
    the page uses them automatically; an upload replaces the corresponding copy
    for this run. Selecting one turbine requires only its file.
-3. Choose **Forecast date (UTC)** and **Time (UTC)**. This is the issue time:
-   the moment you are simulating making the forecast. Use **February 1, 2026,
-   00:00 UTC** for the supplied case example.
+3. Under **Forecast timing**, choose **Historical date** for a past issue, then
+   set **Forecast date (UTC)** and **Time (UTC)**. Use **February 1, 2026,
+   00:00 UTC** for the supplied case example. Choose **Latest available (live)**
+   to issue a forecast at the current UTC hour instead; date/time controls are
+   disabled in that mode.
 4. Choose **24 or 48 hours** and the turbines.
 5. Check the CSV timestamp assumptions shown above the button. Adjust them in
    **Optional settings** and tick **Use these timestamp assumptions**. UTC,
    interval starts, and zero delay are example defaults, not organizer-confirmed
    facts. Changing these settings requires acknowledging them again.
-6. Click **Generate forecast** and wait for the weather retrieval and prediction.
+6. To refresh automatically, tick **Keep forecast updated automatically**.
+7. Click **Generate forecast** and wait for weather retrieval, model training
+   and prediction.
 
 The first automatic NOAA weather retrieval may take several minutes. The app
-keeps a local cache to reduce later downloads. It never substitutes fabricated
+keeps a local cache to reduce later downloads. It checks recent GFS cycles and
+selects the newest complete version available by the issue time, then retrieves
+wind and temperature by the turbine coordinates. Historical mode uses original
+past forecast files. It never substitutes fabricated
 weather when real weather is unavailable. If a run fails, the page explains the
 reason and provides its report when the application created one.
+
+Real runs use **Gradient boosting ML** by default. It learns separately for each
+turbine from eligible wind, temperature, calendar features and measured power.
+The demo uses the small empirical baseline. Both run on the CPU without a GPU
+or API key. See the [weather sources](weather_sources.md) and
+[model explanation](model_ml.md).
+
+## Keep the forecast updated
+
+Tick **Keep forecast updated automatically** before clicking **Generate forecast**.
+The agent checks every five minutes for changed measurement files, model
+artifacts and eligible weather. A change triggers the complete workflow again;
+the chart and downloadable result update when it succeeds. The status shows the
+latest trigger and next check time. Unchanged inputs do not retrain or call OpenAI.
+
+In **Historical date**, the issue stays fixed and later weather is ineligible.
+In **Latest available (live)**, each new UTC hour advances the forecast window
+on the next due check. Live uses observations available at that issue. The supplied
+historical CSVs can train the model, but they provide no fresh operating feed;
+the analysis reports the age of the most recent eligible measurement.
+
+To feed new measurements automatically, update `data/raw/turbine_1.csv` and
+`data/raw/turbine_2.csv` on the host. A browser upload is a single snapshot.
+Unchecking automatic updates stops this page's monitoring. Changing request
+controls also stops its previous monitor; click **Generate forecast** to start
+the new request. A failed automatic update keeps the last successful forecast
+visible, reports the problem, and retries at the next check.
+
+Keep the page open for webpage updates. For a process that runs independently of
+the browser, save a request JSON and use:
+
+```bash
+python scripts/watch_forecast.py --config my_real_request.json \
+  --state-dir runs/monitor-service --interval-seconds 300
+```
+
+Add `--live` for a config with `mode: "live"`. Keep the CLI process running;
+Ctrl+C stops it and retains saved state. The [autonomous agent guide](autonomous_agent.md)
+includes an offline example, `--once`, `--max-cycles`, and recovery details.
 
 ## Understand the results
 
@@ -57,9 +104,17 @@ Open **View hourly values** to see a compact table with one column per turbine.
 There are 24 or 48 rows; a two-turbine CSV has 48 or 96 records because each
 record represents one turbine and one hour.
 
-Changing an input leaves the previous forecast visible with a notice. Click
-**Generate forecast** again to calculate the new request. Each run is saved as
-a separate version.
+Open **Forecast analysis and model validation** to review peaks, large changes,
+old measurements and weather outside the training range. Its chronological ML
+validation table compares gradient boosting and the empirical baseline using
+held-out **measured wind and temperature**. These errors describe regression
+quality; actual 24–48-hour forecast accuracy also depends on weather forecast
+errors and needs a separate historical replay with target measurements.
+
+Changing request controls leaves the previous forecast visible with a notice.
+Click **Generate forecast** to calculate the new request. Automatic updates also
+refresh results after files or weather change. Each run is saved as a separate
+version.
 
 ## Download and inspect
 
@@ -69,6 +124,8 @@ a separate version.
   weather evidence, model identity, summary, and workflow trace.
 - **How this forecast was made** shows a short explanation of the model,
   eligible measurements, weather availability, data preparation, and limitations.
+  Its trace shows all seven stages: weather, preparation, training, input checks,
+  prediction, analysis and saving.
 - **AI explanation** appears when optional OpenAI orchestration completes.
 
 All run files are also saved under `runs/application/`. If actual targets exist
@@ -85,16 +142,19 @@ Most reviewers can leave this panel closed after reviewing the timestamp assumpt
 | CSV timezone, interval label, reporting delay | Match the organizer's export and measurement availability |
 | Weather input | Upload a complete `weather.json` instead of using the NOAA archive |
 | Forecast wind height | Match the weather feature used by the numerical model |
-| Prediction model | Choose a configured teammate model or the empirical baseline |
+| Prediction model | Keep Gradient boosting ML, compare the empirical baseline, or select a configured Team model |
 | Measurement history | Permit later observations only when they genuinely existed at the issue time |
 | Use OpenAI agent | Request API orchestration and an explanation when the host has configured credentials |
 
-The host configures model artifacts and API keys in `.env` or environment
-variables. Model and AI options become usable when the required configuration
-exists. The local controller makes no OpenAI calls; automatic weather retrieval
-still needs internet. A matching local weather JSON allows an offline real-data
-run. The numerical model always calculates the power values.
+The host configures teammate artifacts and the optional `OPENAI_API_KEY` in
+local `.env` or environment variables. `OPENAI_MODEL` optionally overrides the
+application default `gpt-4.1-mini`. Keys are never entered into request files or
+committed to Git. **Team model** appears when its factory and artifact paths are
+configured; **Use OpenAI agent** is available when a key is present. The local
+controller makes no OpenAI calls; automatic weather retrieval still needs
+internet. A matching local weather JSON allows an offline real-data run.
+The numerical model always calculates the power values.
 
-Live mode, batch replay, custom Python providers, and detailed configuration
-remain available through the [Python/CLI guide](application_io.md). The website
-focuses on one forecast at a time. For setup commands, see the [README](../README.md).
+Batch replay, custom Python providers and the full configuration contract are
+in the [Python/CLI guide](application_io.md). For setup commands, see the
+[README](../README.md).

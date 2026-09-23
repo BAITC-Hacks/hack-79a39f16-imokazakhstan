@@ -1,0 +1,19 @@
+{
+  "issue_time": "2026-02-01T00:00:00+00:00",
+  "turbine_ids": ["T1", "T2"],
+  "horizon_hours": 48,
+  "mode": "live",
+  "data_paths": {"T1": "data/raw/turbine_1.csv", "T2": "data/raw/turbine_2.csv"},
+  "input_format": "organizer",
+  "source_timezone": "UTC",
+  "interval_label": "start",
+  "reporting_delay_minutes": 0,
+  "assumptions_confirmed": false,
+  "observation_policy": "available",
+  "weather_source": "noaa_gfs",
+  "wind_height_m": 100,
+  "model_kind": "gradient_boosting",
+  "controller": "openai",
+  "output_root": "runs/application",
+  "cache_dir": "data/cache/weather"
+}

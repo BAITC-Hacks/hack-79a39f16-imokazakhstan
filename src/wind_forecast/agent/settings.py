@@ -43,6 +43,7 @@ class RunConfig:
     model_factory: str = ""
     model_path: str = ""
     model_metadata_path: str = ""
+    model_kind: str = "auto"
     controller: str = "deterministic"
     output_root: str = "runs/application"
     cache_dir: str = "data/cache/weather"
@@ -74,6 +75,8 @@ class RunConfig:
             raise ValueError("fixture mode uses mock weather; use historical/live for real inputs")
         if self.controller not in {"deterministic", "openai"}:
             raise ValueError("controller must be deterministic or openai")
+        if self.model_kind not in {"auto", "gradient_boosting", "empirical"}:
+            raise ValueError("model_kind must be auto, gradient_boosting, or empirical")
         if self.wind_height_m not in {10, 100}:
             raise ValueError("wind_height_m must be 10 or 100 for the GFS provider")
         if not self.output_root or not self.cache_dir:
@@ -121,7 +124,7 @@ def runtime_settings() -> dict[str, str]:
         pass
     return {
         "api_key": os.getenv("OPENAI_API_KEY", ""),
-        "model": os.getenv("OPENAI_MODEL", ""),
+        "model": os.getenv("OPENAI_MODEL", "") or "gpt-4.1-mini",
         "model_factory": os.getenv("WIND_MODEL_FACTORY", ""),
         "model_path": os.getenv("WIND_MODEL_PATH", ""),
         "model_metadata_path": os.getenv("WIND_MODEL_METADATA", ""),

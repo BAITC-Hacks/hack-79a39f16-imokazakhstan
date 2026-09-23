@@ -190,76 +190,144 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
         "output_interval": "(valid_time - 1 hour, valid_time]",
         "units":"normalized_active_power; capacity and normalization denominator unconfirmed"},
         "training_limit":config.training_limit.isoformat(), "controller":{"requested":config.controller}}
-    session, saved_dir = None, None
+    session, saved_dir, fetched_weather = None, None, None
+    selected_provider = weather_provider
+    all_rows, observations, training_hash = [], [], ""
+    prepared = False
+    warnings = ["Normalization denominator and capacity are unconfirmed; do not interpret values as MW or MWh."]
+
+    def record(step, status, detail):
+        trace.events.append({"run_id": request.request_id, "step": step, "status": status,
+            "event_time": datetime.now(timezone.utc).isoformat(),
+            "simulated_issue_time": request.issue_time.isoformat(), "detail": detail})
+
     try:
         if config.mode != "fixture" and not config.assumptions_confirmed:
             raise ValueError("acknowledge the selected timezone and interval assumptions before running real data")
-        if config.mode == "fixture":
-            datasets = load_datasets(config)
-        else:
-            datasets = datasets if datasets is not None else load_datasets(config)
-        if any(t not in datasets for t in config.turbine_ids):
-            raise ValueError("provide an observation dataset for each selected turbine")
-        all_rows = [r for t in config.turbine_ids for r in datasets[t].observations]
-        _validate_observations(all_rows, request.turbine_ids)
-        observations = [r for r in all_rows if r.observed_at <= config.training_limit
-                        and r.available_at <= request.issue_time and r.quality_flag == "ok"]
-        for t in config.turbine_ids:
-            if not any(r.turbine_id == t and r.wind_ms is not None and r.power_norm is not None for r in observations):
-                raise ValueError(f"no eligible wind/power training pairs for {t}")
-        report["datasets"] = {t:datasets[t].report for t in config.turbine_ids}
-        report["observations"] = {"eligible":len(observations), "excluded":len(all_rows)-len(observations),
-            "latest_hour_end":max(r.observed_at for r in observations).isoformat(),
-            "latest_available_at":max(r.available_at for r in observations).isoformat()}
-        training_hash = hashlib.sha256(json.dumps(json_safe([asdict(r) for r in sorted(observations,
-            key=lambda r:(r.turbine_id,r.observed_at))]),sort_keys=True).encode()).hexdigest()
-        warnings = ["Normalization denominator and capacity are unconfirmed; do not interpret values as MW or MWh."]
-        if predictor is None and config.model_factory:
-            predictor, model_metadata = load_team_predictor(config.model_factory, config.model_path,
-                config.model_metadata_path, issue_time=request.issue_time, training_limit=config.training_limit, mode=config.mode)
-        elif predictor is None:
-            predictor = EmpiricalPowerCurve().fit(observations)
-            model_metadata = {"model_id":predictor.model_id,"trained_through":max(r.observed_at for r in observations).isoformat(),
-                "training_data_hash":training_hash,"features":["wind_ms","turbine_id"],
-                "target_units":"normalized_active_power","trained_on_synthetic":config.mode=="fixture",
-                "kind":"empirical baseline fitted for this issue"}
-            warnings.append("Empirical baseline: coarse weather-grid wind differs from measured turbine wind; validate/calibrate before claiming accuracy.")
-        if not model_metadata or model_metadata.get("model_id") != predictor.model_id:
-            raise ValueError("predictor requires matching model metadata")
-        if parse_time(model_metadata["trained_through"]) > config.training_limit:
-            raise ValueError("model was trained beyond this issue's observation cutoff")
-        if config.mode != "fixture" and model_metadata.get("trained_on_synthetic") is not False:
-            raise ValueError("real runs require a model declared trained_on_synthetic=false")
-        if model_metadata.get("target_units") != "normalized_active_power":
-            raise ValueError("model target_units must be normalized_active_power")
-        if not isinstance(model_metadata.get("features"),list) or not model_metadata["features"]:
-            raise ValueError("model metadata must list its input features")
-        if not isinstance(model_metadata.get("training_data_hash"),str) or not model_metadata["training_data_hash"]:
-            raise ValueError("model metadata requires a training_data_hash")
-        report["model"] = model_metadata
-        trace.events.append({"step":"prepare_observations","status":"ok","detail":report["observations"]})
-        session = WorkflowSession(request, observations, weather_provider or _provider(config), predictor,
-            model_identity=model_metadata, trace=trace, extra_warnings=warnings)
+
+        def fetch_weather():
+            nonlocal fetched_weather, selected_provider
+            if fetched_weather is None:
+                record("fetch_weather", "started", "Retrieve original forecast by turbine coordinates")
+                selected_provider = selected_provider or _provider(config)
+                fetched_weather = selected_provider.fetch(request)
+                record("fetch_weather", "ok", {"provider": fetched_weather.provider,
+                    "rows": len(fetched_weather.rows), "available_at": fetched_weather.available_at.isoformat()})
+            return {"provider": fetched_weather.provider, "rows": len(fetched_weather.rows),
+                "available_at": fetched_weather.available_at.isoformat(),
+                "provenance": fetched_weather.provenance_status, "synthetic": fetched_weather.is_synthetic}
+
+        def prepare_data():
+            nonlocal datasets, all_rows, observations, training_hash, prepared
+            if fetched_weather is None:
+                raise ValueError("fetch_weather must complete before prepare_data")
+            if prepared:
+                return report["observations"]
+            record("prepare_data", "started", "Prepare complete hourly observations available at issue time")
+            if config.mode == "fixture":
+                datasets = load_datasets(config)
+            else:
+                datasets = datasets if datasets is not None else load_datasets(config)
+            if any(t not in datasets for t in config.turbine_ids):
+                raise ValueError("provide an observation dataset for each selected turbine")
+            all_rows = [r for t in config.turbine_ids for r in datasets[t].observations]
+            _validate_observations(all_rows, request.turbine_ids)
+            observations = [r for r in all_rows if r.observed_at <= config.training_limit
+                            and r.available_at <= request.issue_time and r.quality_flag == "ok"]
+            for t in config.turbine_ids:
+                if not any(r.turbine_id == t and r.wind_ms is not None and r.power_norm is not None for r in observations):
+                    raise ValueError(f"no eligible wind/power training pairs for {t}")
+            report["datasets"] = {t:datasets[t].report for t in config.turbine_ids}
+            report["observations"] = {"eligible":len(observations), "excluded":len(all_rows)-len(observations),
+                "latest_hour_end":max(r.observed_at for r in observations).isoformat(),
+                "latest_available_at":max(r.available_at for r in observations).isoformat()}
+            training_hash = hashlib.sha256(json.dumps(json_safe([asdict(r) for r in sorted(observations,
+                key=lambda r:(r.turbine_id,r.observed_at))]),sort_keys=True).encode()).hexdigest()
+            prepared = True
+            record("prepare_data", "ok", report["observations"])
+            return report["observations"]
+
+        def train_model():
+            nonlocal predictor, model_metadata, session
+            if not prepared:
+                raise ValueError("prepare_data must complete before train_model")
+            if session is not None:
+                return {"model": report["model"], "validation": report.get("model_validation", {})}
+            record("train_model", "started", "Fit or load numerical predictor using eligible history")
+            if predictor is None and config.model_factory:
+                predictor, model_metadata = load_team_predictor(config.model_factory, config.model_path,
+                    config.model_metadata_path, issue_time=request.issue_time, training_limit=config.training_limit, mode=config.mode)
+            elif predictor is None and (config.model_kind == "gradient_boosting" or
+                                         config.model_kind == "auto" and config.mode != "fixture"):
+                from wind_forecast.models.gradient_boosting import HistogramPowerRegressor
+                predictor = HistogramPowerRegressor().fit(observations, issue_time=request.issue_time,
+                    training_limit=config.training_limit, turbine_ids=request.turbine_ids)
+                model_metadata = {"model_id": predictor.model_id,
+                    "trained_through": predictor.trained_through.isoformat(),
+                    "training_data_hash": predictor.training_report["training_data_hash"],
+                    "observation_data_hash": training_hash, "features": list(predictor.features),
+                    "hyperparameters": predictor.training_report["hyperparameters"],
+                    "scikit_learn_version": predictor.training_report["scikit_learn_version"],
+                    "target_units": "normalized_active_power", "trained_on_synthetic": config.mode == "fixture",
+                    "kind": "histogram gradient boosting fitted for this issue"}
+                report["model_validation"] = predictor.training_report
+                warnings.append("ML validation uses measured weather; archived-forecast accuracy needs separate replay evaluation.")
+            elif predictor is None:
+                predictor = EmpiricalPowerCurve().fit(observations)
+                model_metadata = {"model_id":predictor.model_id,"trained_through":max(r.observed_at for r in observations).isoformat(),
+                    "training_data_hash":training_hash,"features":["wind_ms","turbine_id"],
+                    "target_units":"normalized_active_power","trained_on_synthetic":config.mode=="fixture",
+                    "kind":"empirical baseline fitted for this issue"}
+                warnings.append("Empirical baseline: coarse weather-grid wind differs from measured turbine wind; validate/calibrate before claiming accuracy.")
+            if not model_metadata or model_metadata.get("model_id") != predictor.model_id:
+                raise ValueError("predictor requires matching model metadata")
+            if parse_time(model_metadata["trained_through"]) > config.training_limit:
+                raise ValueError("model was trained beyond this issue's observation cutoff")
+            if config.mode != "fixture" and model_metadata.get("trained_on_synthetic") is not False:
+                raise ValueError("real runs require a model declared trained_on_synthetic=false")
+            if model_metadata.get("target_units") != "normalized_active_power":
+                raise ValueError("model target_units must be normalized_active_power")
+            if not isinstance(model_metadata.get("features"),list) or not model_metadata["features"]:
+                raise ValueError("model metadata must list its input features")
+            if not isinstance(model_metadata.get("training_data_hash"),str) or not model_metadata["training_data_hash"]:
+                raise ValueError("model metadata requires a training_data_hash")
+            report["model"] = model_metadata
+            session = WorkflowSession(request, observations, selected_provider, predictor,
+                model_identity=model_metadata, trace=trace, extra_warnings=warnings)
+            # The application-owned fetch tool already performed stage zero.
+            session.weather, session.stage = fetched_weather, 1
+            record("train_model", "ok", {"model_id": predictor.model_id,
+                "validation": report.get("model_validation", {})})
+            return {"model": report["model"], "validation": report.get("model_validation", {})}
+
+        def session_step(name):
+            if session is None:
+                raise ValueError("train_model must complete before forecast tools")
+            return getattr(session, name)()
 
         def save():
             nonlocal saved_dir
+            if session is None:
+                raise ValueError("train_model must complete before save_forecast")
             session._ready(4)
             if saved_dir is None:
-                session.record("save_forecast","ok","Persist a new immutable forecast version")
+                session.record("save_forecast", "ok", "Persist a new immutable forecast version")
                 artifacts = save_forecast_run(session.result, trace, session.weather, config.output_root)
                 saved_dir = artifacts.run_dir
-            return {"saved":True,"version":saved_dir.name,"rows":len(session.result.rows)}
+            return {"saved": True, "version": saved_dir.name, "rows": len(session.result.rows)}
 
-        tools = {"fetch_weather":session.fetch_weather,"audit_inputs":session.audit_inputs,
-            "predict_power":session.predict_power,"inspect_forecast":session.inspect_forecast,"save_forecast":save}
+        tools = {"fetch_weather": fetch_weather, "prepare_data": prepare_data, "train_model": train_model,
+            "audit_inputs": lambda: session_step("audit_inputs"),
+            "predict_power": lambda: session_step("predict_power"),
+            "inspect_forecast": lambda: session_step("inspect_forecast"), "save_forecast": save}
         ai_text = ""
         if config.controller == "openai":
             settings = runtime_settings()
             if settings["api_key"] and settings["model"]:
                 from wind_forecast.agent.openai_controller import OpenAIController
                 outcome = OpenAIController(settings["api_key"],settings["model"]).run(
-                    {"request":json_safe(asdict(request)),"model_id":predictor.model_id,
-                     "eligible_observations":len(observations),"limitations":warnings}, tools,
+                    {"request":json_safe(asdict(request)), "model_selection":config.model_kind,
+                     "workflow_steps":list(tools), "limitations":warnings}, tools,
                     is_complete=lambda:saved_dir is not None)
                 trace.events.extend(outcome.events)
                 report["controller"].update({"used":"openai" if outcome.completed else "openai_with_deterministic_fallback","usage":outcome.usage,
@@ -294,7 +362,7 @@ def run_forecast(config: RunConfig | dict, *, datasets=None, predictor=None, wea
         if saved_dir is None:
             saved_dir = Path(config.output_root) / f"{state}-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}-{uuid4().hex[:10]}"
             saved_dir.mkdir(parents=True,exist_ok=False)
-        run = ApplicationRun(state,request,None,session.weather if session else None,trace,saved_dir,report,
+        run = ApplicationRun(state,request,None,session.weather if session else fetched_weather,trace,saved_dir,report,
                              "Forecast not completed. " + error,error)
     _write(run.run_dir/"request.json",config.to_dict())
     _write(run.run_dir/"report.json",run.report)

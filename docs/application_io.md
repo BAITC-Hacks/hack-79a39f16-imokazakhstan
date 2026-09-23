@@ -8,6 +8,28 @@ both. Supply an issue time, a 24- or 48-hour horizon, observation data, and
 forecast weather. The service filters what could have been known at that issue
 time, runs a Python predictor, and returns validated rows with an inspectable
 report. OpenAI can coordinate those steps and explain their summaries.
+`ForecastMonitor` watches for changes and repeats the complete cycle
+automatically; it supports both a fixed historical issue and a live UTC hour.
+
+## Agent workflow
+
+The application exposes seven ordered tools to both the local controller and
+the optional OpenAI agent:
+
+| Tool | Work performed |
+|---|---|
+| `fetch_weather` | Retrieve original eligible weather for the requested coordinates and hours |
+| `prepare_data` | Validate measurements, aggregate complete hours and apply availability cutoffs |
+| `train_model` | Fit the configured numerical model or verify/load a teammate artifact |
+| `audit_inputs` | Check weather provenance, time eligibility and complete input coverage |
+| `predict_power` | Produce one numerical prediction per turbine and future hour |
+| `inspect_forecast` | Check coverage/values and analyse peaks, ramps, training ranges and observation age |
+| `save_forecast` | Persist a new version with its forecast, inputs, analysis and trace |
+
+Python guards the order and eligibility rules. An LLM cannot skip validation or
+replace forecast values with generated text. The automatic monitor detects a
+changed input, invokes this cycle, and retains the last successful forecast if
+an update fails. See [autonomous_agent.md](autonomous_agent.md).
 
 ## Start with a working fixture
 
@@ -80,6 +102,7 @@ config = {
     "observation_policy": "frozen_jan31",
     "weather_source": "noaa_gfs",
     "wind_height_m": 100,
+    "model_kind": "gradient_boosting",
     "controller": "deterministic",
     "output_root": "runs/application",
     "cache_dir": "data/cache/weather",
@@ -92,15 +115,27 @@ print(run.state, run.summary)
 conventions. Its historical name does not imply organizer confirmation. The
 report retains configuration and warnings.
 
-Without teammate model configuration, this fits the empirical power-curve
-baseline using eligible SCADA only. It maps forecast wind-speed bins to
-normalized power. A successful run does not establish forecasting accuracy,
-calibrated uncertainty, or turbine-resolution weather.
+Without teammate model configuration, real runs default to histogram gradient
+boosting, fitted separately for each turbine on eligible SCADA. Its features
+are wind speed, temperature and cyclic UTC hour/season. At least 168 valid hourly
+wind/power pairs are needed per turbine. The synthetic fixture defaults to the
+empirical wind-bin baseline. Set `model_kind="empirical"` to select that baseline
+explicitly for a real run.
+
+The ML report includes chronological holdout errors and a baseline comparison.
+That diagnostic uses held-out **measured weather**; it does not establish
+24–48-hour forecasting accuracy with uncertain weather inputs. February targets
+are absent from the supplied files. See [model_ml.md](model_ml.md) for features,
+training policy and the validation limits.
 
 The NOAA path requires the `weather` optional dependencies and network access.
-It downloads original GFS fields and caches them locally. Eligibility can fail
-if original fields are missing, inaccessible, inconsistent, or modified after
-the simulated issue time. See [weather_archive.md](weather_archive.md).
+It inspects the latest four GFS cycles, newest first, and chooses a complete cycle
+whose required files and indices were available by the issue. It then downloads
+the original fields and caches them locally. Eligibility can fail if fields are
+missing, inaccessible, inconsistent, or modified after the issue. This discovery
+works for both historical and current forecasts without a fixed publication-delay
+assumption. See [weather_sources.md](weather_sources.md) for public source links
+and discovery, and [weather_archive.md](weather_archive.md) for integrity checks.
 
 ## Configuration fields
 
@@ -126,6 +161,7 @@ be passed to the CLI through `--config`.
 | `weather_factory` | Trusted `module:function`, called with `config=config`, for `python` weather |
 | `wind_height_m` | `100` or `10` for GFS; default `100` |
 | `coordinates` | Turbine → `(latitude, longitude)`; case coordinates supplied by default |
+| `model_kind` | `auto` (default), `gradient_boosting`, or `empirical`; `auto` uses ML for real runs and the baseline for fixtures |
 | `model_factory` | Trusted `module:function` loading the team's predictor |
 | `model_path` | Single fitted model artifact file |
 | `model_metadata_path` | JSON metadata binding training provenance and SHA-256 to that file |
@@ -136,12 +172,16 @@ be passed to the CLI through `--config`.
 Case defaults are `T1=(43.645150, 78.535604)` and
 `T2=(43.643198, 78.538828)`. They are close together; the coarse GFS grid may give
 both the same nearest weather point. This is not independent turbine-resolution
-weather.
+weather. An injected predictor takes priority, followed by a configured
+`model_factory`; `model_kind` selects the built-in model when neither is supplied.
 
 `fixture` requires `mock` weather. Real modes reject `mock`. `live` uses actual
 forecast-time inputs with the same eligibility checks; the January-only file
 does not supply a live operational feed. Choose `available` only when additional
 observations genuinely existed by each simulated issue time.
+An individual `run_forecast` call uses its supplied issue time in every mode.
+`ForecastMonitor(..., rolling_live=True)` and the website's live monitor advance
+it to the current UTC hour and use `observation_policy="available"`.
 
 ## Observation input
 
@@ -230,7 +270,8 @@ run_forecast(
 The serialized response contains `state`, `request`, `result`, `run_dir`,
 `report`, `summary`, and `error`. Full weather and trace are saved separately.
 `report` includes `assumptions`, `training_limit`, `controller`, `datasets`,
-`observations`, `model`, `forecast`, `evaluation`, `lineage`, and `weather` when
+`observations`, `model`, `model_validation` (for built-in ML), `forecast`,
+`evaluation`, `lineage`, and `weather` when
 the corresponding stages finish. Blocked runs may contain only earlier fields.
 
 | State | Interpretation |
@@ -249,6 +290,13 @@ matches future target labels **after** the prediction and reports matched/missin
 row counts plus per-turbine MAE/RMSE. Those labels are excluded from model inputs.
 With the supplied February request there are no matching targets, so it reports
 `no_ground_truth`. These diagnostic metrics are not an organizer-confirmed score.
+
+This future-target comparison is separate from `report["model_validation"]`,
+which checks the built-in ML model on a chronological slice of eligible training
+history using measured wind and temperature. `report["forecast"]` records
+per-turbine mean/peak, the largest hourly change, observation age, and counts of
+forecast wind or predictions outside the measured training ranges. Findings
+appear in the webpage and can mark a forecast as degraded.
 
 `ForecastResult` contains forecast/request IDs, schema version, model ID,
 weather bundle ID, input hash, creation time, status, synthetic flag, warnings,
@@ -293,6 +341,50 @@ it for reproducibility.
 If you rerun the same issue/turbines/horizon after changing inputs, prior runs
 remain intact. `report["lineage"]` identifies the previous version, whether the
 input hash changed, the number of changed predictions, and the largest change.
+
+## Automatic recalculation
+
+Use `ForecastMonitor` to repeat the complete agent workflow when input files,
+model files/metadata, settings, eligible weather, or the live issue hour change:
+
+```python
+from wind_forecast.agent.monitor import ForecastMonitor
+
+monitor = ForecastMonitor("runs/monitor-team", poll_interval_seconds=300)
+outcome = monitor.poll(config)  # One check; no sleep inside poll().
+print(outcome.state, outcome.reasons)
+if outcome.run is not None:
+    print(outcome.run.run_dir)  # New ApplicationRun, including failed attempts.
+if outcome.last_success is not None:
+    print(outcome.last_success["result"]["rows"])  # Full saved response as a dict.
+```
+
+Schedule another `poll` call after `outcome.next_check_at`, or use the continuous
+CLI, which also reloads configuration JSON on each cycle:
+
+```bash
+python scripts/watch_forecast.py --config my_real_request.json \
+  --state-dir runs/monitor-team --interval-seconds 300
+
+# One offline check, or a bounded two-cycle demonstration.
+python scripts/watch_forecast.py --config examples/watch_request.json --once
+python scripts/watch_forecast.py --config examples/watch_request.json \
+  --state-dir runs/monitor-demo --interval-seconds 30 --max-cycles 2
+```
+
+For rolling current forecasts, set `mode="live"` in the config and add `--live`
+to the command, or use `ForecastMonitor(..., rolling_live=True)`. It advances
+issue time to the current UTC hour and admits only observations available then.
+Historical mode keeps the configured issue fixed. A one-time upload supplies a
+snapshot; continuing measurement updates require durable configured files.
+
+Unchanged inputs do not retrain or call OpenAI. `waiting` and `busy` indicate a
+check is not due or another worker has the lock; `unchanged` means a due check
+found no change. Failed updates preserve the last successful forecast and retry.
+`state.json` stores the last successful full response and input signature;
+`history.jsonl` records checks, triggers and run references. Changed inputs during
+execution are rechecked and retried. See [autonomous_agent.md](autonomous_agent.md)
+for persistence, polling bounds and service operation.
 
 ## Person 1: deliver weather and data
 
@@ -343,6 +435,11 @@ class TeamWeatherProvider:
         # Return a complete WeatherBundle for the fixed ForecastRequest.
         ...
 
+    def probe(self, request):
+        # Required only for automatic monitoring of a custom provider.
+        # Return stable JSON identity of the eligible forecast; exclude check time.
+        ...
+
 def create_provider(*, config):
     return TeamWeatherProvider()
 ```
@@ -357,7 +454,9 @@ requirements still apply.
 
 Supply a fitted artifact file, metadata JSON, and importable factory. Keep
 framework-specific loading in your module. The application does not assume
-scikit-learn, CatBoost, PyTorch, or a pickle format.
+an artifact framework or pickle format for teammate models. The built-in model
+uses scikit-learn; its implementation and diagnostics are in
+[model_ml.md](model_ml.md).
 
 | Metadata field | Contract |
 |---|---|
@@ -451,7 +550,8 @@ The replay bounds are inclusive, with at most 64 issue times per invocation.
 The example includes the January 31 issue requested by the case. A single saved
 model used across the whole replay must have been trained by the earliest issue;
 a model trained through the end of January is ineligible for January 31 at
-00:00. Supply earlier model versions or use the per-issue fitted baseline.
+00:00. Supply earlier model versions or let a built-in model fit separately on
+eligible history for each issue.
 Batch replay forces the deterministic controller, so it makes no OpenAI calls.
 It saves `rolling.csv` (all issues), `february.csv` (February intervals retaining
 overlaps), `submission.csv` (latest issue per turbine/hour), `request.json`, and
@@ -470,17 +570,20 @@ trained later or substitute realized weather for original forecast inputs.
 
 ## OpenAI and remaining decisions
 
-Set `OPENAI_API_KEY` and `OPENAI_MODEL` locally and select `controller="openai"`
+Set `OPENAI_API_KEY` in the host's local environment or ignored `.env`, and select `controller="openai"`
 in Python (or **Use OpenAI agent** under Optional settings on the website)
-for paid API orchestration. The default is deterministic. OpenAI can make at
+for paid API orchestration. `OPENAI_MODEL` optionally overrides the application
+default `gpt-4.1-mini`. Never place a key in request JSON, source files, reports
+or Git. The Python configuration defaults to the local deterministic controller;
+the website enables the OpenAI option when credentials are configured. OpenAI can make at
 most eight API requests per run, capped at 900 output tokens per request, with
 SDK retries disabled. Only bounded summaries cross the API boundary. Local tools
 compute forecasts and enforce eligibility. API errors or invalid tool sequences
 fall back to Python. Token usage is recorded; model choice determines charges.
 No paid calls are required for the fixture.
 
-Brev credit can support teammate GPU training/inference. The application and
-baseline run locally without a GPU and do not automatically deploy or purchase
+Brev credit can support teammate GPU training/inference. The application,
+gradient boosting model and baseline run locally without a GPU and do not automatically deploy or purchase
 GPU resources.
 
 Before a scored submission, resolve source timezone and interval convention,

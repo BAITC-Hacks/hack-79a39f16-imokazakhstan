@@ -7,6 +7,7 @@ import json
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 
@@ -14,7 +15,6 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from wind_forecast.agent.application import run_forecast
-from wind_forecast.agent.input_data import load_scada
 from wind_forecast.agent.presentation import (
     TURBINE_NAMES,
     artifact_zip,
@@ -38,13 +38,6 @@ h2, h3 {letter-spacing: -.02em;}
 </style>""",
     unsafe_allow_html=True,
 )
-
-
-@st.cache_data(show_spinner=False, max_entries=6)
-def prepare_dataset(raw, turbine, zone, interval, delay):
-    return load_scada(
-        raw, turbine, source_timezone=zone, interval_label=interval, reporting_delay_minutes=delay
-    )
 
 
 def upload_weather(raw):
@@ -99,6 +92,13 @@ with st.container(border=True):
         help="Start with the demo, or use the organizer's measurement CSVs.",
     )
     real_data = source == "Your measurements"
+    live = False
+    if real_data:
+        live = st.radio(
+            "Forecast timing", ("Historical date", "Latest available (live)"),
+            horizontal=True, key="forecast_timing",
+            help="Historical uses only weather available at the selected issue. Live advances with the current UTC hour.",
+        ) == "Latest available (live)"
     if not real_data:
         st.caption(
             "Demo uses simulated measurements and weather. No files, API key, or internet needed."
@@ -109,10 +109,11 @@ with st.container(border=True):
         "Forecast date (UTC)",
         date(2026, 2, 1),
         key="issue_date",
+        disabled=live,
         help="The day the forecast is issued. February 1, 2026 is a useful case example.",
     )
     issue_hour = hour.selectbox(
-        "Time (UTC)", range(24), format_func=lambda h: f"{h:02d}:00", key="issue_hour"
+        "Time (UTC)", range(24), format_func=lambda h: f"{h:02d}:00", key="issue_hour", disabled=live
     )
     horizon = length.selectbox(
         "Predict next", (24, 48), format_func=lambda h: f"{h} hours", key="horizon"
@@ -140,7 +141,7 @@ with st.container(border=True):
 
     zone, interval, delay = "UTC", "start", 0
     weather_choice, weather_file, wind_height = "NOAA archive (automatic)", None, 100
-    model_choice, policy = "Empirical baseline", "frozen_jan31"
+    model_choice, policy = "Gradient boosting ML", "available" if live else "frozen_jan31"
     zone_labels = {
         "UTC": "UTC",
         "Etc/GMT-5": "UTC+05:00 (fixed)",
@@ -181,14 +182,12 @@ with st.container(border=True):
                 ("NOAA archive (automatic)", "Upload weather file"),
                 key="weather_choice",
             )
-            if team_ready:
-                model_choice = b.selectbox(
-                    "Prediction model", ("Team model", "Empirical baseline"), key="model_choice"
-                )
-            else:
-                b.caption(
-                    "Prediction model: **empirical baseline**. A trained team model can be connected by the project owner."
-                )
+            model_choice = b.selectbox(
+                "Prediction model",
+                ("Gradient boosting ML", "Empirical baseline", "Team model") if team_ready
+                else ("Gradient boosting ML", "Empirical baseline"), key="model_choice",
+                help="ML trains on your eligible measurement history and reports chronological validation.",
+            )
             if weather_choice == "Upload weather file":
                 weather_file = st.file_uploader(
                     "Forecast weather JSON",
@@ -207,6 +206,8 @@ with st.container(border=True):
                 "Measurement history",
                 ("frozen_jan31", "available"),
                 key="policy",
+                index=1 if live else 0,
+                disabled=live,
                 format_func=lambda p: (
                     "Through January 31, 2026 (case default)"
                     if p == "frozen_jan31"
@@ -215,10 +216,10 @@ with st.container(border=True):
             )
         use_ai = st.checkbox(
             "Use OpenAI agent",
-            value=False,
+            value=ai_ready and real_data,
             disabled=not ai_ready,
             key="use_ai",
-            help="Coordinates the Python workflow and writes an explanation. Uses paid OpenAI API requests.",
+            help="Calls weather, preparation, training, prediction, analysis and saving tools. Uses paid API requests only for a new run.",
         )
         if not ai_ready:
             st.caption(
@@ -236,13 +237,17 @@ with st.container(border=True):
             help="This records your chosen interpretation. Confirm the conventions with the organizers before a scored submission.",
         )
     baseline = model_choice == "Empirical baseline"
+    team_model = model_choice == "Team model"
+    if live:
+        policy = "available"
     if real_data:
         st.caption(
             "Model: "
             + (
                 "Empirical baseline · learns average power at each wind speed."
                 if baseline
-                else "Configured team model."
+                else "Configured team model." if team_model
+                else "Gradient boosting ML · learns from wind, temperature and measured power."
             )
         )
 
@@ -254,9 +259,9 @@ with st.container(border=True):
             problems.append("Confirm the timestamp assumptions above.")
         if weather_choice == "Upload weather file" and weather_file is None:
             problems.append("Add a weather JSON file in Optional settings.")
-    signature = fingerprint(
-        {
+    signature_inputs = {
             "source": source,
+            "live": live,
             "date": issue_date,
             "hour": issue_hour,
             "horizon": horizon,
@@ -272,7 +277,7 @@ with st.container(border=True):
                 file_identity(runtime["model_path"]),
                 file_identity(runtime["model_metadata_path"]),
             )
-            if not baseline
+            if team_model
             else None,
             "ai": bool(use_ai and ai_ready),
             "sources": {
@@ -287,7 +292,22 @@ with st.container(border=True):
             if weather_file is not None
             else None,
         }
+    signature = fingerprint(signature_inputs)
+    if st.session_state.pop("forecast_refresh_pending", False):
+        st.session_state["forecast_signature"] = signature
+    control_inputs = dict(signature_inputs)
+    control_inputs["sources"] = {
+        t: signature_inputs["sources"][t] if uploads[t] is not None else str(local_paths[t])
+        for t in turbines
+    } if real_data else None
+    control_inputs["model_files"] = (runtime["model_path"], runtime["model_metadata_path"]) if team_model else None
+    control_signature = fingerprint(control_inputs)
+    auto_update = real_data and st.checkbox(
+        "Keep forecast updated automatically", key="auto_update",
+        help="Checks every 5 minutes for changed project CSVs, model artifacts and eligible weather. Live also advances each UTC hour.",
     )
+    if auto_update:
+        st.caption("Updates run while this page stays open. The background command in the website guide works after you close the page.")
     generate = st.button(
         "Generate forecast" if real_data else "Run demo forecast",
         type="primary",
@@ -303,22 +323,28 @@ with st.container(border=True):
         )
     result_notice = st.empty()
 
+if st.session_state.get("monitor_config") and (
+    not auto_update or control_signature != st.session_state.get("monitor_signature")
+):
+    st.session_state.pop("monitor_config", None)
+    st.session_state.pop("monitor_poll", None)
+
 if generate:
     st.session_state.pop("forecast_run", None)
     st.session_state.pop("forecast_start_error", None)
     try:
         with st.spinner("Preparing measurements, fetching weather, and predicting power…"):
-            datasets, paths = None, {}
+            paths = {}
             if real_data:
-                datasets = {}
                 for turbine in turbines:
-                    raw = (
-                        uploads[turbine].getvalue()
-                        if uploads[turbine] is not None
-                        else local_paths[turbine].read_bytes()
-                    )
-                    datasets[turbine] = prepare_dataset(raw, turbine, zone, interval, delay)
-                    if uploads[turbine] is None:
+                    if uploads[turbine] is not None:
+                        raw = uploads[turbine].getvalue()
+                        path = ROOT / "data/cache/uploads" / f"{turbine}-{hashlib.sha256(raw).hexdigest()}.csv"
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        if not path.exists():
+                            path.write_bytes(raw)
+                        paths[turbine] = str(path)
+                    else:
                         paths[turbine] = str(local_paths[turbine])
             weather_path = (
                 upload_weather(weather_file.getvalue())
@@ -328,12 +354,12 @@ if generate:
                 else ""
             )
             config = RunConfig(
-                issue_time=datetime.combine(issue_date, datetime.min.time(), tzinfo=UTC).replace(
+                issue_time=datetime.now(UTC).replace(minute=0, second=0, microsecond=0) if live else datetime.combine(issue_date, datetime.min.time(), tzinfo=UTC).replace(
                     hour=issue_hour
                 ),
                 turbine_ids=turbines,
                 horizon_hours=horizon,
-                mode="historical" if real_data else "fixture",
+                mode=("live" if live else "historical") if real_data else "fixture",
                 data_paths=paths,
                 source_timezone=zone,
                 interval_label=interval,
@@ -343,17 +369,62 @@ if generate:
                 weather_source=("bundles" if weather_path else "noaa_gfs") if real_data else "mock",
                 weather_path=weather_path,
                 wind_height_m=wind_height,
-                model_factory=runtime["model_factory"] if not baseline else "",
-                model_path=runtime["model_path"] if not baseline else "",
-                model_metadata_path=runtime["model_metadata_path"] if not baseline else "",
+                model_kind="empirical" if baseline or not real_data else "gradient_boosting",
+                model_factory=runtime["model_factory"] if team_model else "",
+                model_path=runtime["model_path"] if team_model else "",
+                model_metadata_path=runtime["model_metadata_path"] if team_model else "",
                 controller="openai" if use_ai and ai_ready else "deterministic",
                 output_root=str(ROOT / "runs/application"),
                 cache_dir=str(ROOT / "data/cache/weather"),
             )
-            st.session_state["forecast_run"] = run_forecast(config, datasets=datasets)
+            if auto_update:
+                from wind_forecast.agent.monitor import ForecastMonitor
+                state_dir = ROOT / "runs/monitors" / uuid4().hex
+                monitor = ForecastMonitor(state_dir, rolling_live=live)
+                poll = monitor.poll(config)
+                st.session_state["monitor_config"] = config.to_dict()
+                st.session_state["monitor_dir"] = str(state_dir)
+                st.session_state["monitor_signature"] = control_signature
+                st.session_state["monitor_live"] = live
+                st.session_state["monitor_poll"] = poll.to_dict()
+                if poll.run:
+                    st.session_state["forecast_run"] = poll.run
+                elif poll.error:
+                    st.session_state["forecast_start_error"] = poll.error
+            else:
+                st.session_state["forecast_run"] = run_forecast(config)
             st.session_state["forecast_signature"] = signature
     except Exception as exc:  # noqa: BLE001 -- show input/plugin failures at the UI boundary.
         st.session_state["forecast_start_error"] = error_text(exc)
+
+if st.session_state.get("monitor_config"):
+    @st.fragment(run_every=30)
+    def update_forecast():
+        from wind_forecast.agent.monitor import ForecastMonitor
+        monitor = ForecastMonitor(st.session_state["monitor_dir"],
+                                  rolling_live=st.session_state["monitor_live"])
+        poll = monitor.poll(st.session_state["monitor_config"])
+        if poll.state not in {"waiting", "busy"}:
+            st.session_state["monitor_poll"] = poll.to_dict()
+        if poll.run and poll.run.state == "completed":
+            st.session_state["forecast_run"] = poll.run
+            if not {"inputs_changed_during_run", "inputs_recheck_failed"}.intersection(poll.reasons):
+                st.session_state["forecast_refresh_pending"] = True
+            st.session_state.pop("forecast_start_error", None)
+            st.rerun()
+        status = st.session_state.get("monitor_poll", {})
+        if status.get("error"):
+            st.warning("Automatic update could not complete: " + error_text(status["error"]))
+            st.caption("The last successful forecast is kept. The agent will retry at the next check.")
+        else:
+            st.caption("Automatic updates active · checking input changes every 5 minutes.")
+        if status.get("reasons"):
+            st.caption("Latest trigger: " + ", ".join(status["reasons"]))
+            if {"inputs_changed_during_run", "inputs_recheck_failed"}.intersection(status["reasons"]):
+                st.warning("Inputs changed during calculation or could not be rechecked. Another calculation is scheduled.")
+        if poll.next_check_at:
+            st.caption(f"Next check: {poll.next_check_at:%H:%M:%S} UTC")
+    update_forecast()
 
 st.subheader("2. Read your forecast")
 run = st.session_state.get("forecast_run")
@@ -368,7 +439,7 @@ else:
         result_notice.markdown("[Forecast ready — view results ↓](#2-read-your-forecast)")
     if signature != st.session_state.get("forecast_signature"):
         st.warning(
-            "Settings have changed. These results belong to the previous request; generate again to update them."
+            "Inputs or settings have changed. These results belong to the previous request; generate again or wait for the automatic update."
         )
     st.caption(
         f"Issued {run.request.issue_time:%d %b %Y, %H:%M} UTC · Next {run.request.horizon_hours} hours · "
@@ -423,6 +494,28 @@ else:
                     for t in run.request.turbine_ids
                 },
             )
+        with st.expander("Forecast analysis and model validation"):
+            analysis = run.report.get("forecast", {})
+            findings = analysis.get("findings", [])
+            if findings:
+                for finding in findings:
+                    st.write(finding)
+            else:
+                st.write("All requested hours are present. Forecast values passed the numerical checks.")
+            validation = run.report.get("model_validation", {})
+            if validation.get("by_turbine"):
+                st.caption("Chronological validation uses held-out measured wind and temperature. It does not measure 24–48 hour weather-forecast accuracy.")
+                metrics = []
+                for turbine, diagnostic in validation["by_turbine"].items():
+                    check = diagnostic.get("validation", {})
+                    for name, label in (("ml", "Gradient boosting"), ("empirical_baseline", "Empirical baseline")):
+                        if check.get(name):
+                            metrics.append({"Turbine": TURBINE_NAMES.get(turbine, turbine), "Model": label, **check[name]})
+                if metrics:
+                    st.dataframe(metrics, hide_index=True, width="stretch")
+            lineage = run.report.get("lineage", {})
+            if lineage.get("supersedes"):
+                st.caption(f"Updated forecast: {lineage.get('changed_prediction_count', 0)} values changed from the previous version.")
         if run.report.get("controller", {}).get("completed"):
             with st.expander("AI explanation"):
                 st.markdown(run.summary)
@@ -450,7 +543,7 @@ else:
         weather = run.weather
         if run.state == "completed":
             st.caption(
-                "Measurements prepared → Weather retrieved → Inputs checked → Power predicted → Results saved"
+                "Weather retrieved → Data prepared → Model trained → Inputs checked → Power predicted → Results analysed → Forecast saved"
             )
         controller_names = {
             "deterministic": "Python workflow",
@@ -473,6 +566,12 @@ else:
                 f"{assumptions.get('source_timezone')} · interval {assumptions.get('interval_label')} · {assumptions.get('reporting_delay_minutes')} min delay"
             )
         st.table([{"Item": k, "Value": str(v)} for k, v in details.items()])
+        if weather and weather.provider.startswith("NOAA GFS"):
+            st.markdown("Weather: [NOAA GFS public forecast archive](https://registry.opendata.aws/noaa-gfs-bdp-pds/)")
+        steps = [{"Step": e["step"].replace("_", " "), "Status": e["status"]}
+                 for e in run.trace.events if e.get("step") and e.get("status") != "started"]
+        if steps:
+            st.table(steps)
         if run.result:
             for warning in run.result.warnings:
                 st.caption(warning)

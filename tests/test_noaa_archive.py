@@ -20,6 +20,7 @@ from wind_forecast.agent.noaa_archive import (
     select_cycle,
 )
 from wind_forecast.contracts import ForecastRequest
+from wind_forecast.agent.noaa_updates import NoaaCycleSnapshot, NoaaObjectVersion, source_version_signature
 
 UTC = timezone.utc
 RUN = datetime(2026, 1, 31, 18, tzinfo=UTC)
@@ -64,6 +65,19 @@ class NoaaArchiveTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.provider = NoaaArchiveProvider(COORDINATES, self.directory.name, max_workers=1)
         self.request = ForecastRequest("noaa-test", ISSUE, ("T1", "T2"), 24, "historical")
+        versions = []
+        for hour in range(7, 31):
+            key = f"gfs.20260131/18/atmos/gfs.t18z.pgrb2.0p25.f{hour:03d}"
+            versions.extend((
+                NoaaObjectVersion(key, RUN + timedelta(hours=3, minutes=34, seconds=10), '"grib-etag"', 72),
+                NoaaObjectVersion(key + ".idx", RUN + timedelta(hours=3, minutes=34, seconds=34), '"index-etag"', len(index_for(hour))),
+            ))
+        discovery_patch = patch(
+            "wind_forecast.agent.noaa_updates.discover_noaa_cycle",
+            return_value=NoaaCycleSnapshot(RUN, RUN + timedelta(hours=4), source_version_signature(RUN, versions), BASE_URL, 48),
+        )
+        self.discovery = discovery_patch.start()
+        self.addCleanup(discovery_patch.stop)
 
     def test_cycle_rounds_down_with_six_hour_delay(self):
         self.assertEqual(select_cycle(ISSUE), RUN)
@@ -125,6 +139,14 @@ class NoaaArchiveTests(unittest.TestCase):
                 with self.assertRaises(NoaaArchiveError):
                     self.provider._hour(self.request, RUN, ISSUE + timedelta(hours=1))
                 self.assertEqual(http.call_count, 1)
+
+    @patch("wind_forecast.agent.noaa_archive._decode_field", side_effect=decode_values)
+    @patch("wind_forecast.agent.noaa_archive._http", side_effect=source_http)
+    def test_version_change_between_discovery_and_fetch_is_rejected(self, http, decode):
+        self.discovery.return_value = NoaaCycleSnapshot(RUN, RUN + timedelta(hours=4), "outdated-signature", BASE_URL, 48)
+        with patch.dict("sys.modules", {"eccodes": MagicMock()}):
+            with self.assertRaisesRegex(NoaaArchiveError, "version changed after discovery"):
+                self.provider.fetch(self.request)
 
     def test_late_index_also_rejected(self):
         def late_index(url, **kwargs):
