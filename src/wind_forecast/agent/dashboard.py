@@ -22,7 +22,13 @@ class DashboardService:
     def inputs(self):
         raw=json.loads(self.config_path.read_text());config=RunConfig.from_dict(raw)
         if config.model_kind!='local_history':raise ValueError('Dashboard requires explicit local_history configuration')
-        signature=(self.config_path.stat().st_mtime_ns,tuple((t,Path(p).stat().st_mtime_ns,Path(p).stat().st_size) for t,p in sorted(config.data_paths.items())))
+        from wind_forecast.agent.local_models import ARTIFACTS
+        weights=[config.model_path or ARTIFACTS/'deploy-final/catboost_neighbor.cbm',
+                 config.model_metadata_path or ARTIFACTS/'deploy-final/catboost_neighbor.metadata.json',
+                 config.wind_model_path or ARTIFACTS/'wind-audit/wind_model.joblib',
+                 config.wind_metadata_path or ARTIFACTS/'wind-audit/metadata.json']
+        model_version=tuple((str(p),Path(p).stat().st_mtime_ns,Path(p).stat().st_size) for p in weights)
+        signature=(model_version,self.config_path.stat().st_mtime_ns,tuple((t,Path(p).stat().st_mtime_ns,Path(p).stat().st_size) for t,p in sorted(config.data_paths.items())))
         if self.signature!=signature:
             datasets=load_datasets(config)
             from wind_forecast.agent.local_models import reject_synthetic_datasets

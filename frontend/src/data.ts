@@ -257,7 +257,8 @@ export function validateDashboard(
   oneOf(data.provenance, ['synthetic', 'verified_original', 'local_scada'], 'provenance');
   if (data.timezone !== DASHBOARD_TIMEZONE) invalid('timezone', `must equal ${DASHBOARD_TIMEZONE}`);
   if (data.period !== period) invalid('period', 'does not match the requested period');
-  if (period === 'date' && (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate))) invalid('date', 'explicit archive date required');
+  if (period === 'date' && (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)))
+    invalid('date', 'explicit archive date required');
   const expectedDate = period === 'date' ? selectedDate! : localDate(now, period);
   if (data.date !== expectedDate) invalid('date', 'does not match the requested local day');
   const generatedAt = timestamp(data.generatedAt, 'generatedAt');
@@ -387,7 +388,16 @@ export async function loadDashboard(
       'Unable to reach the dashboard API. Check the endpoint and network connection.',
     );
   }
-  if (!response.ok) throw new Error(`The dashboard API returned HTTP ${response.status}.`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = await response.json();
+      if (typeof body.error === 'string') detail = ` ${body.error.slice(0, 600)}`;
+    } catch {
+      /* status remains visible */
+    }
+    throw new Error(`The dashboard API returned HTTP ${response.status}.${detail}`);
+  }
   if (!/\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(response.headers.get('content-type') ?? '')) {
     throw new Error('The dashboard API must return JSON (Content-Type: application/json).');
   }

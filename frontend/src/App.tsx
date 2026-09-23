@@ -64,7 +64,12 @@ const weatherIcons = {
   clear: Sun,
   storm: CloudLightning,
 };
-const statusText = { operating: 'Operating', attention: 'Review advised', offline: 'Offline', unknown: 'Status unavailable' };
+const statusText = {
+  operating: 'Operating',
+  attention: 'Review advised',
+  offline: 'Offline',
+  unknown: 'Status unavailable',
+};
 const dateLabel = (date: string) =>
   new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
@@ -243,8 +248,13 @@ function TurbineDetail({ turbine, data }: { turbine: Turbine; data: DashboardDat
         </span>
       </div>
       <a className="detail-link" href="#performance">
-        Explore {data.period === 'date' ? 'selected date’s' : data.period === 'today' ? 'today’s' : 'yesterday’s'} performance{' '}
-        <ArrowRight size={15} />
+        Explore{' '}
+        {data.period === 'date'
+          ? 'selected date’s'
+          : data.period === 'today'
+            ? 'today’s'
+            : 'yesterday’s'}{' '}
+        performance <ArrowRight size={15} />
       </a>
     </aside>
   );
@@ -378,9 +388,17 @@ export default function App() {
         const runtime = await loadConfig(controller.signal);
         setConfig(runtime);
         if (runtime.dataMode === 'api' && runtime.defaultDate && !archiveDate) {
-          setArchiveDate(runtime.defaultDate); setPeriod('date'); return;
+          setArchiveDate(runtime.defaultDate);
+          setPeriod('date');
+          return;
         }
-        const dashboard = await loadDashboard(period, runtime, controller.signal, archiveDate, issue ? `${issue}:00+05:00` : undefined);
+        const dashboard = await loadDashboard(
+          period,
+          runtime,
+          controller.signal,
+          archiveDate,
+          issue ? `${issue}:00+05:00` : undefined,
+        );
         if (!controller.signal.aborted) {
           setConfig(runtime);
           setData({
@@ -467,7 +485,9 @@ export default function App() {
                   ? 'Connection issue'
                   : synthetic
                     ? 'Demo environment'
-                    : 'Verified source data'}
+                    : data?.provenance === 'local_scada'
+                      ? 'Local SCADA + model'
+                      : 'Verified source data'}
             </span>
             {config?.backendUrl && (
               <a className="backend-link" href={config.backendUrl} target="_blank" rel="noreferrer">
@@ -496,12 +516,32 @@ export default function App() {
                   Yesterday
                 </button>
               </div>
-              {config?.dataMode === 'api' && <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                <label>Archive date <input aria-label="Archive date" type="date" value={archiveDate}
-                  onChange={e => { setArchiveDate(e.target.value); setPeriod('date'); }} /></label>
-                <label>Issue (UTC+5) <input aria-label="Forecast issue (UTC+5)" type="datetime-local" step="3600" value={issue}
-                  onChange={e => setIssue(e.target.value)} /></label>
-              </div>}
+              {config?.dataMode === 'api' && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <label>
+                    Archive date{' '}
+                    <input
+                      aria-label="Archive date"
+                      type="date"
+                      value={archiveDate}
+                      onChange={(e) => {
+                        setArchiveDate(e.target.value);
+                        setPeriod('date');
+                      }}
+                    />
+                  </label>
+                  <label>
+                    Issue (UTC+5){' '}
+                    <input
+                      aria-label="Forecast issue (UTC+5)"
+                      type="datetime-local"
+                      step="3600"
+                      value={issue}
+                      onChange={(e) => setIssue(e.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
               <button
                 className="refresh-button"
                 onClick={() => setRefresh((value) => value + 1)}
@@ -534,11 +574,19 @@ export default function App() {
             <>
               <div className={`provenance-note ${synthetic ? 'synthetic' : ''}`}>
                 <div>
-                  <span className="demo-label">{synthetic ? 'SYNTHETIC DEMO' : data.provenance === 'local_scada' ? 'LOCAL SCADA + ML' : 'SOURCE DATA'}</span>
+                  <span className="demo-label">
+                    {synthetic
+                      ? 'SYNTHETIC DEMO'
+                      : data.provenance === 'local_scada'
+                        ? 'LOCAL SCADA + ML'
+                        : 'SOURCE DATA'}
+                  </span>
                   <span>
                     {synthetic
                       ? 'Sample readings, forecasts and status. Site coordinates are verified; SCADA mapping is unconfirmed.'
-                      : data.provenance === 'local_scada' ? 'Historical CSV measurements and local model forecasts. Timestamp assumptions: UTC+5, interval start. Missing facts remain empty.' : 'Original source readings and forecasts supplied by the connected service.'}
+                      : data.provenance === 'local_scada'
+                        ? 'Historical CSV measurements and local model forecasts. Timestamp assumptions: UTC+5, interval start. Missing facts remain empty.'
+                        : 'Original source readings and forecasts supplied by the connected service.'}
                   </span>
                 </div>
                 <span className="dashboard-date">
@@ -563,11 +611,20 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              {data.forecast && <div className="provenance-note"><span>
-                Issued {data.forecast.issueTime} · {data.forecast.horizonHours} hourly predictions · {data.forecast.modelId}<br />
-                Wind: {data.forecast.windModelId} · Last measurement: {data.forecast.latestObservation}<br />
-                Select the issue day and following two days to inspect the full 48-hour horizon. No new February facts are available.
-              </span></div>}
+              {data.forecast && (
+                <div className="provenance-note">
+                  <span>
+                    Issued {data.forecast.issueTime} · {data.forecast.horizonHours} hourly
+                    predictions · {data.forecast.modelId}
+                    <br />
+                    Wind: {data.forecast.windModelId} · Last measurement:{' '}
+                    {data.forecast.latestObservation}
+                    <br />
+                    Select the issue day and following two days to inspect the full 48-hour horizon.
+                    No new February facts are available.
+                  </span>
+                </div>
+              )}
               <SummaryCards turbine={selected} period={period} />
               <div className="site-layout">
                 <SiteMap

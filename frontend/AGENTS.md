@@ -34,11 +34,11 @@ The current data paths are:
 
 ```text
 demo: browser -> createDemoDashboard() -> validated display semantics -> components
-api:  browser -> /api/dashboard -> nginx proxy -> future integration service
+api:  browser -> /api/dashboard -> nginx proxy -> local dashboard service
                                                    -> existing Python artifacts
 ```
 
-There is no dashboard REST service in this branch. `app.py` is Streamlit;
+The local dashboard REST service is now `wind_forecast.agent.dashboard`; see `docs/local_integration.md`. The historical handoff below predates this adapter. `app.py` is Streamlit;
 `DASHBOARD_BACKEND_URL` only creates a navigation link. To connect data, an
 integration service must implement the API and be reachable through
 `DASHBOARD_API_UPSTREAM`. Do not point the JSON endpoint at the Streamlit UI.

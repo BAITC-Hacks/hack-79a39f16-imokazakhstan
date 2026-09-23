@@ -199,7 +199,7 @@ checks. Do not share a state directory between different intended monitors.
         data = {} if config.mode == "fixture" else {
             turbine: _file_identity(config.data_paths[turbine])
             if config.data_paths.get(turbine) else {"state": "missing"}
-            for turbine in config.turbine_ids
+            for turbine in (("T1", "T2") if config.model_kind == "local_history" else config.turbine_ids)
         }
         model = {key: _file_identity(value) for key, value in (
             ("artifact", config.model_path), ("metadata", config.model_metadata_path)

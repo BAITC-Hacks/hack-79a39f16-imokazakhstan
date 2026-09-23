@@ -54,7 +54,15 @@ export interface DashboardData {
   period: Period;
   turbines: Turbine[];
   events: WeatherEvent[];
-  forecast?: { issueTime: string; modelId: string; windModelId: string; horizonHours: number; runId: string; latestObservation: string; note: string };
+  forecast?: {
+    issueTime: string;
+    modelId: string;
+    windModelId: string;
+    horizonHours: number;
+    runId: string;
+    latestObservation: string;
+    note: string;
+  };
 }
 
 export interface TurbineSummary {

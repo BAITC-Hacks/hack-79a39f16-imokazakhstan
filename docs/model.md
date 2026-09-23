@@ -1,7 +1,7 @@
 # Модели Person 2: минимальный локальный комплект
 
 Оставлены только выбранные модели и код, необходимый для их запуска.
-Подключение к бэкенду и фронтенду в этой задаче не выполнялось.
+Локальные модели подключены к React API и Streamlit. См. [запуск и ограничения](local_integration.md).
 
 | Назначение | Решение | Локальные веса |
 |---|---|---|
@@ -9,8 +9,7 @@
 | Скорость ветра | ExtraTrees, собственная история | `src/wind_forecast/models/artifacts/wind-audit/wind_model.joblib` |
 | Текущий mock/базовый путь сайта | `models/power_curve.py`, EmpiricalPowerCurve | существующий механизм без сети/API |
 
-Рядом с весами сохранены metadata, единицы, cutoff и SHA-256. Веса не входят в git;
-передавать их отдельно с metadata. Подготовленная локальная среда:
+Рядом с весами сохранены metadata, единицы, cutoff и SHA-256. Необходимые веса и metadata теперь включены в git. Подготовленная локальная среда:
 `src/wind_forecast/models/artifacts/runtime-env/bin/python`.
 Для отдельной установки: Python 3.11/3.12 и
 `pip install -r src/wind_forecast/models/requirements-deploy.txt`.
@@ -48,7 +47,7 @@ PYTHONPATH=src src/wind_forecast/models/artifacts/runtime-env/bin/python \
 Сохранённый адаптер: `wind_forecast.models.deployment:load_predictor`.
 Он принимает уже почасовые Observation с UTC timestamps и available_at; повторно
 агрегировать их не нужно. WeatherBundle для самого предиктора не требуется.
-Адаптер пока не подключён к сайту. Shared contracts и чужие модули не менялись.
+Адаптер подключён через режим local_history; погодные режимы сохранены отдельно.
 
 ## Использование ветра
 
