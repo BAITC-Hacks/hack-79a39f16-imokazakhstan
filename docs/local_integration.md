@@ -98,3 +98,12 @@ weather-driven forecast. That alternative requires eligible archived weather for
 every issue and an appropriate model/cutoff. No fake fill or backdated final model
 was used to conceal the gaps. Prior measured-weather validation is not claimed as
 24/48-hour forecast accuracy.
+
+## Verification in this session
+
+110 Python tests passed (81 application/integration, 12 weather, 9 data, 8 model).
+Frontend: 41 unit tests, production build, formatting, 16 existing desktop/mobile
+browser cases and 2 real local-model browser cases passed. Both real browser cases
+verified archived dates, absent February facts, unknown status, no synthetic fallback,
+wind rendering and mobile overflow. These are execution/integration checks, not a new
+accuracy measurement. Raw SCADA and generated replay artifacts remain ignored by Git.

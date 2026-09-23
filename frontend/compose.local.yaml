@@ -26,6 +26,7 @@ services:
         '8000',
       ]
     volumes:
+      - ../examples/local_request.json:/app/examples/local_request.json:ro
       - ../data/raw:/app/data/raw:ro
       - ../src/wind_forecast/models/artifacts/deploy-final:/app/src/wind_forecast/models/artifacts/deploy-final:ro
       - ../src/wind_forecast/models/artifacts/wind-audit:/app/src/wind_forecast/models/artifacts/wind-audit:ro
@@ -62,6 +63,7 @@ services:
         '300',
       ]
     volumes:
+      - ../examples/local_request.json:/app/examples/local_request.json:ro
       - ../data/raw:/app/data/raw:ro
       - ../src/wind_forecast/models/artifacts/deploy-final:/app/src/wind_forecast/models/artifacts/deploy-final:ro
       - ../src/wind_forecast/models/artifacts/wind-audit:/app/src/wind_forecast/models/artifacts/wind-audit:ro
