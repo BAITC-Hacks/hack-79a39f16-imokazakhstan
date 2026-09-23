@@ -1,6 +1,6 @@
 # WindScope — Wind and Power Forecasting
 
-WindScope is a hackathon prototype for forecasting the **hourly normalized active power of two wind turbines, 24 or 48 hours ahead**. It helps wind-farm operators and analysts inspect expected generation, compare available measurements with predictions, and understand the data behind each forecast.
+WindScope is the **imokazakhstan** team’s HackAlem AI prototype for forecasting the **hourly normalized active power of two wind turbines, 24 or 48 hours ahead**. It helps wind-farm operators and analysts inspect expected generation, compare available measurements with predictions, and understand the data behind each forecast.
 
 The project includes a React dashboard, a Streamlit interface, saved CPU models, and an auditable forecasting workflow. A synthetic demonstration runs without external services after dependencies are installed. Real forecasts require the original measurement files, which are not distributed in this repository.
 
@@ -162,6 +162,14 @@ The dashboard is configured at **http://localhost:8080**. The local overlay adds
 
 **Verification status:** the CLI worker's restart behavior was exercised, but Docker image builds, container health checks, and container-level recovery have not been verified in the development environment.
 
+### 6. Optional weather-driven forecasts and AI review
+
+For the weather-driven path, copy `examples/historical_request.json` to a local configuration, set the measurement paths, and review the source timezone, interval labeling, and reporting delay. Set `assumptions_confirmed` to `true` only after checking those choices; the unchanged example intentionally blocks a real-data run. Select **Gradient boosting ML** in Streamlit, or run the configured request through `scripts/run_forecast.py`. Automatic NOAA retrieval requires the full dependencies and network access. This path is separate from the saved models' daily 06:00 UTC+5 schedule.
+
+To configure optional AI services, copy `.env.example` to an ignored local `.env` and set `OPENAI_API_KEY` and/or `TYPESAFE_API_KEY`. The corresponding model settings are `OPENAI_MODEL` (code default: `gpt-4.1-mini`) and `TYPESAFE_MODEL` (code default: `jev-1.13.0`). No shared credential is included. Keep credentials on the server and out of frontend configuration. Restart Streamlit after changing an already loaded key.
+
+In the weather-driven measurement workflow, **Use OpenAI agent** enables tool coordination. **Jev: review the next 3 hours** enables an advisory review; eligible operator notes can provide additional context. OpenAI failure falls back to the local controller, and a Jev failure leaves the numerical forecast available. The synthetic demo stays offline, and neither service is invoked by `local_history`.
+
 ## A reproducible judging scenario
 
 ### Without access to the original dataset
@@ -200,6 +208,16 @@ Some integration checks require the original CSVs. The real-dashboard browser ca
 ## Data and integrations
 
 **Measurements.** The supplied turbine files contain ten-minute timestamps, wind speed, normalized active power, and ambient temperature. The records span March 11, 2023 through **January 31, 2026 at 23:50**, despite filenames mentioning February 28. Raw files are excluded from Git. See the [dataset profile](docs/dataset_profile.md) for columns, coverage, missing records, and hashes.
+
+Retain the original column names when supplying organizer CSVs:
+
+```text
+ID
+Статистическое время
+Средняя скорость ветра(m/s)
+Нормализованная активная мощность
+Средняя температура окружающей среды(°C)
+```
 
 **Timestamp assumptions.** The local configuration uses fixed UTC+5 (`Etc/GMT-5`), interval-start source timestamps, and zero reporting delay. UTC+5 was specified by the operator; the files themselves do not declare these conventions. Review the assumptions and turbine identities before treating the run as a verified submission. Internal cross-module timestamps are timezone-aware UTC.
 
@@ -248,4 +266,8 @@ No public deployed application URL is confirmed in this repository. The supporte
 - [Background monitoring and recovery](docs/autonomous_agent.md)
 - [Dataset coverage and source assumptions](docs/dataset_profile.md)
 - [Selected models and experiment results](docs/model.md)
+- [Streamlit user guide](docs/website_guide.md)
+- [Weather archive validation](docs/weather_archive.md)
+- [Data and weather export](docs/data.md)
+- [Dashboard API contract](frontend/API.md)
 - [Contribution ownership](AGENTS.md)
