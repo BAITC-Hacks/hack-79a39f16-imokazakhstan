@@ -304,3 +304,93 @@ state. It is not a model that forecasts global weather from these two CSVs.
 References: https://docs.api.nvidia.com/nim/reference/nvidia-fourcastnet-infer and
 https://docs.nvidia.com/nim/earth-2/fourcastnet/latest/quickstart-guide.html.
 No NVIDIA key, calls, or GPU resources are needed for this experiment.
+
+## Monthly replay: February 2025 through January 2026
+The same selected wind-scenario architecture was evaluated with monthly expanding-window retraining. Each month at 06:00 UTC+5, fit only complete historical 48-hour target windows available at that cutoff; hold weights fixed for that month and refresh measured input history every day at 06:00. No weather API or future measured covariates enter a forecast.
+Model architecture was previously selected using later 2025 data. Although each fit and each forecast is temporally causal, this retrospective architecture assessment is not a new independent model-selection test. February 2026 remains absent.
+The main monthly grouping follows the actual production interval, not the issue month. An hourly mean ending at 00:00 belongs to the preceding calendar day. Separate daily forecast vintages for the same valid hour remain separate evaluation pairs. November 2024–January 2025 are unscored warm-up forecasts for calibrating 30/90-day error windows.
+| Target month | Scored pairs | MAE | Model RMSE | Historical-mean RMSE | Absolute-error interval coverage |
+|---|---:|---:|---:|---:|---:|
+| 2025-02 | 2,660 | 0.3093 | 0.3588 | 0.3576 | 78.7% |
+| 2025-03 | 2,814 | 0.3272 | 0.3779 | 0.4041 | 78.6% |
+| 2025-04 | 2,375 | 0.3021 | 0.3574 | 0.3598 | 80.0% |
+| 2025-05 | 2,562 | 0.2881 | 0.3532 | 0.3565 | 79.5% |
+| 2025-06 | 2,732 | 0.2415 | 0.3182 | 0.3075 | 83.1% |
+| 2025-07 | 2,944 | 0.2188 | 0.2939 | 0.3158 | 81.8% |
+| 2025-08 | 2,948 | 0.2339 | 0.3108 | 0.3079 | 77.8% |
+| 2025-09 | 2,876 | 0.2681 | 0.3393 | 0.3413 | 79.7% |
+| 2025-10 | 2,548 | 0.2575 | 0.3116 | 0.3423 | 85.3% |
+| 2025-11 | 2,880 | 0.3008 | 0.3490 | 0.3767 | 73.1% |
+| 2025-12 | 2,948 | 0.3208 | 0.3687 | 0.3873 | 74.4% |
+| 2026-01 | 2,976 | 0.2897 | 0.3433 | 0.3423 | 82.8% |
+
+Overall: **RMSE 0.340804, MAE 0.279409**, 33,263 scored pairs. Historical mean RMSE is 0.350976; relative RMSE reduction is 2.90%. The model beats historical mean in 8 of 12 months and loses in February, June, August 2025 and January 2026. This is a modest and season-dependent gain.
+
+There are 33,888 forecast rows in the requested target period; 625 lack a complete observed target hour. 24 daily turbine origins in the requested issue-month range were skipped for fewer than 18 complete recent power hours. Results do not cover those excluded origins.
+
+### Prediction intervals, not answer-confidence scores
+
+All interval variants use only matured out-of-sample errors, grouped by turbine and lead bucket (1–24 / 25–48 h). Compare both coverage and width/interval score; reaching coverage with a nearly full-range interval is weak predictive information. A minimum of 200 eligible errors is required; insufficient history produces a missing band.
+
+| Method | Target coverage | Observed coverage | Mean width | Interval score ↓ |
+|---|---:|---:|---:|---:|
+| signed_30d | 80% | 78.44% | 0.877565 | 1.080189 |
+| signed_90d | 80% | 78.24% | 0.890444 | 1.089390 |
+| absolute_30d | 80% | 79.49% | 0.877324 | 1.192459 |
+
+`signed_30d` and `signed_90d` use residual quantiles 0.1/0.9. `absolute_30d`
+uses a finite-sample order statistic of absolute residuals for a symmetric band.
+The latter is closest to nominal aggregate coverage, but the former has lower
+interval score. None dominates on all criteria. These are evaluated interval
+candidates, not guaranteed conformal coverage under serial dependence and monthly
+model changes. November/December undercoverage persists. Bands are intentionally
+not clipped to an unconfirmed physical capacity. The deployed saved model and its
+fixed interval defaults were not silently replaced by this evaluation.
+
+### Jev assessment (official documentation checked 2026-09-23)
+
+The user did not have a precise model name; the identifiable Jev is TypeSafe's
+System One model. Its Choice/Score `confidence` is a statistic of its answer
+probability distribution, not a continuous wind-power prediction interval:
+https://docs.typesafe.ai/confidence.
+
+TypeSafe explicitly documents limitations with numeric precision and advises
+keeping mathematical operations in code:
+https://docs.typesafe.ai/model-jaggedness/jev-1.13.
+
+Published Jev 1.13 pricing is $0.042 per million input tokens, outputs free:
+https://docs.typesafe.ai/models. For illustration, 730 calls with 2,000 input
+tokens each would cost about $0.061 at that rate, excluding any gateway markup
+and retries. This is an estimate, not a measured API benchmark. No API key was
+read, no customer data was sent, and no Jev API calls were made.
+
+The issue is model suitability rather than token cost. Local calibration already
+provides measured coverage against real power targets. Jev could be evaluated
+later as a categorical risk/quality signal from textual maintenance logs, with
+separate calibration against downstream errors; its answer-confidence must not
+be relabeled as power-interval coverage. A different numerical forecasting model
+can be assessed once its exact name is known.
+
+### Reproduce and inspect
+
+```bash
+MPLCONFIGDIR=/tmp/imokazakhstan-matplotlib \
+OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 PYTHONPATH=src \
+python3 -m wind_forecast.evaluation.monthly_replay \
+  --turbine-1 '/Users/baimurzin_r/Downloads/Dataset HackAlemAI для участников 11.03.2023-28.02.2026 - turbine 1.csv' \
+  --turbine-2 '/Users/baimurzin_r/Downloads/Dataset HackAlemAI для участников 11.03.2023-28.02.2026 - turbine 2.csv' \
+  --output src/wind_forecast/models/artifacts/monthly-new
+
+PYTHONPATH=src python3 -m unittest \
+  wind_forecast.models.test_monthly_replay \
+  wind_forecast.models.test_history wind_forecast.models.test_power_curve
+```
+
+Current local outputs are in
+`src/wind_forecast/models/artifacts/monthly-202502-202601-v2/`:
+`report.html`, `monthly_metrics.png`, `report.json`, `replay.csv`, `monthly.csv`,
+and `monthly_groups.csv`. The latter includes every month × turbine × lead
+bucket with counts, errors, coverage, widths and interval scores. These generated
+files remain ignored by Git; the code and this documentation are committed.
+
+Measured computation time: 18.28 seconds before rendering; interval calibration for all three methods took 0.56 seconds; peak process memory 192 MiB. No GPU or paid API was used.
