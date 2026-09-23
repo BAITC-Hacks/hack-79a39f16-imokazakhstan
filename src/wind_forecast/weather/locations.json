@@ -1,0 +1,14 @@
+{
+  "turbine_1": {
+    "latitude": 43.645150,
+    "longitude": 78.535604,
+    "source_short_url": "https://maps.app.goo.gl/iN6svMt69D5qRpFU9",
+    "resolved_url": "https://www.google.com/maps/search/43.645150,+78.535604"
+  },
+  "turbine_2": {
+    "latitude": 43.643198,
+    "longitude": 78.538828,
+    "source_short_url": "https://maps.app.goo.gl/8UQMwsYavY6nLvFY8",
+    "resolved_url": "https://www.google.com/maps/search/43.643198,+78.538828"
+  }
+}

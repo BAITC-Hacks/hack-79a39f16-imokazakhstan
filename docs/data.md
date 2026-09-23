@@ -12,7 +12,157 @@
 
 Prove one real run for both turbine coordinates and the full 48-hour horizon before bulk retrieval. Check January validation and February test dates for the same provider. A historical/reanalysis API may provide weather after the fact without preserving the exact forecast issue available at the time. Do not use it for scored replay unless organizers approve that interpretation. Record any interpolation from three-hourly weather to hourly.
 
-`src/wind_forecast/weather/noaa_gfs.py` is intentionally a provider placeholder. Implement only after a smoke download establishes archive coverage and fields. The local mock provider is for UI and integration only.
+`src/wind_forecast/weather/noaa_gfs.py` began as a placeholder. The bounded
+smoke proof described below now supports a real GFS provider; the local mock
+provider remains for UI and integration only.
+
+## Person 1 implementation and evidence (2026-09-23)
+
+The first weather feasibility gate passed for **one probe issue time only**. The
+original SCADA file is still absent from this checkout, so no source-specific
+observation mapping, historical model input pair, January validation run, or
+February coverage claim is complete. The earlier plan below remains the guide
+for expanding the work after the missing source facts arrive.
+
+### Confirmed locations and mapping boundary
+
+The two [brief-supplied map links](../docs/HackAlem%20AI_%20Agentic%20AI%20%D0%B4%D0%BB%D1%8F%20%D0%BF%D1%80%D0%BE%D0%B3%D0%BD%D0%BE%D0%B7%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D1%8F%20%D0%B2%D1%8B%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%BA%D0%B8%20%D0%92%D0%AD%D0%A1.pdf)
+redirected to Google Maps searches containing these latitude/longitude pairs.
+The exact source and resolved search coordinates are recorded in
+`src/wind_forecast/weather/locations.json`.
+
+| Brief label | Latitude | Longitude | Source link |
+| --- | ---: | ---: | --- |
+| turbine 1 | 43.645150 | 78.535604 | [map shortlink](https://maps.app.goo.gl/iN6svMt69D5qRpFU9) |
+| turbine 2 | 43.643198 | 78.538828 | [map shortlink](https://maps.app.goo.gl/8UQMwsYavY6nLvFY8) |
+
+`turbine_1` and `turbine_2` are location labels for the weather proof. Their
+mapping to SCADA turbine IDs is not confirmed and must be configured once the
+actual file is available. Both locations select NOAA GFS nearest grid point
+`43.75, 78.5` for the probed run; recorded distances are approximately 12.0
+and 12.3 km. This grid selection is not a turbine-coordinate replacement.
+
+### One original GFS weather run
+
+The bounded probe used simulated issue `2026-02-01T00:00:00Z` and original NOAA
+GFS 0.25-degree run initialization `2026-01-31T18:00:00Z`. This issue time is
+a probe choice, not a confirmed organizer schedule. The exact 48 source leads
+`f007` through `f054` exist in the [public NOAA GFS S3 bucket](https://registry.opendata.aws/noaa-gfs-bdp-pds/).
+Each required GRIB and `.idx` object has an S3 `LastModified` no later than
+`2026-01-31T22:01:29Z`, before the probe issue time. The extraction downloaded
+the three original GRIB messages needed at each lead: `UGRD` and `VGRD` at
+10 m above ground and `TMP` at 2 m above ground. ecCodes validated the field
+identity and valid time in each message. Wind speed is the magnitude of those
+two components; temperature is converted from kelvin to Celsius. Wind height
+remains 10 m; no hub-height adjustment was made. All 96
+`(location label, valid time)` keys from issue+1 through issue+48 are present
+exactly once. The [NOAA GFS field inventory](https://www.nco.ncep.noaa.gov/pmb/products/gfs/)
+documents the source product; actual `.idx` and GRIB metadata were checked too.
+
+Additional metadata-only spot checks found all f007-f054 GRIB and index objects
+before these other probe issue times. These are **unverified leads**, not decoded
+weather bundles or a whole-period coverage ledger:
+
+| Probe issue UTC | Selected run UTC | Latest object `LastModified` UTC |
+| --- | --- | --- |
+| 2023-03-01 00:00 | 2023-02-28 18:00 | 2023-02-28 21:47:15 |
+| 2026-01-15 00:00 | 2026-01-14 18:00 | 2026-01-14 22:02:23 |
+| 2026-02-28 00:00 | 2026-02-27 18:00 | 2026-02-27 22:04:31 |
+
+Under the provider's explicit evidence rule, the bundle is
+`verified_original`: exact original NOAA-origin S3 objects and byte ranges were
+hashed, their forecast validity was decoded, their current `LastModified`
+timestamps precede issue time, and the NOAA/AWS registry documents the bucket
+as public and updated each cycle. **Historical per-object access logs are not
+available**, so public access at the exact past minute is inferred from this
+origin-bucket evidence rather than observed directly. The basis and limitation
+are carried in the verified manifest. If the team requires independent
+historical release logs, retain that caveat and obtain them before treating
+this as sufficient for scored replay.
+
+| Evidence | Value |
+| --- | --- |
+| Bundle ID | `gfs0p25-2ad228edf892aabfc6783edc` |
+| Source-content SHA-256 | `0b1549d6a00d3b3a50ad291e9423d1ee1f4e227d776c7ef0745449ffb8c87c` |
+| Verified cache manifest SHA-256 | `f23c41df371aec8237a686cf233f4ad6982411108e94c6a5c0e8002a8ae24d89` |
+| Small handoff manifest SHA-256 | `04d92e2f6362b1da71bbaa04903d4fc25132608be38e6ad1cc3dd0c7186b931b` |
+| Rows / coverage | 96/96; 48 hours x 2 location labels; no gaps or duplicates |
+| Missing inputs | Real SCADA file and confirmed observation semantics |
+
+The immutable source cache is under
+`data/cache/person1-noaa-gfs/` (144 selected GRIB messages, about 128 MiB).
+The small, weather-only handoff is under
+`data/processed/weather-gfs0p25-2ad228edf892aabfc6783edc/` (about 174 KB):
+`weather.csv`, `origin_proof.json`, `verified_archive_manifest.json`, and
+`handoff_manifest.json`. The last file lists SHA-256 checksums for the other
+files. Both directories are ignored by Git; share the handoff and, if an
+independent original-byte check is needed, the cache separately with the team.
+The small handoff is not a complete raw-source cache. Do not rename it as a
+combined observation/model artifact.
+
+### Reproduction and source preparation
+
+These commands were run from the repository root. The package can be installed
+editable, or `PYTHONPATH=src` can be set in the active shell. The bounded
+metadata probe needs only Python's standard library. A new GRIB extraction
+needs the optional ECMWF `eccodes` Python package and its working binary
+library; it was installed into an external temporary runtime for this probe,
+not added to root packaging. Ask Person 3 to add a reproducible optional
+dependency if the team adopts this provider.
+
+```powershell
+$env:PYTHONPATH = 'src'
+python -m wind_forecast.weather probe --issue-time 2026-02-01T00:00:00Z --run-init 2026-01-31T18:00:00Z
+python -m wind_forecast.weather fetch --issue-time 2026-02-01T00:00:00Z
+python -m wind_forecast.weather export --issue-time 2026-02-01T00:00:00Z
+```
+
+`fetch` defaults to cache-only and rechecks all cached message hashes without
+network or ecCodes. On a fresh machine with an approved decoder installed,
+append `--network` to `fetch` for a bounded original-source acquisition. The
+provider tests candidate cycles newest first, at most four by default, and
+accepts only a complete eligible run. Re-running `export` against the same
+immutable directory raises rather than overwriting it. Transfer or remove the
+previous handoff intentionally before republishing; never overwrite a changed
+version under the same identity.
+
+`python -m wind_forecast.data profile <actual-scada-path>` reports raw file
+SHA-256, headers and row count without assuming timezone or target units. For
+preparation, supply a reviewed JSON config with `version: 1`, source column
+names, source-to-canonical turbine mapping, named timezone, `time_label`
+(`instant`, `interval_start`, or `interval_end`), interval duration where
+needed, target unit/definition, and either an `available_at` column or an
+explicitly supported publication lag. `availability_basis` must explain that
+rule. The config's `source_verified` remains false until its mapping and
+normalization are evidenced; in that state, `prepare` reports quality but does
+not publish a usable artifact. A verified config also needs
+`verification_evidence` and `target_definition`:
+
+```powershell
+python -m wind_forecast.data prepare <actual-scada-path> --config <reviewed-config.json>
+```
+
+The canonical CSV loader signature remains unchanged. Usable complete rows
+retain `quality_flag="ok"`, matching Person 2's baseline. Other stable flags
+include `missing_power`, `missing_wind`, `invalid_power`, `invalid_wind`, and
+temperature diagnostics; rows with an invalid timestamp or unknown turbine are
+quarantined. Identical duplicate keys collapse with a count; conflicting keys
+are quarantined. The quality report includes per-turbine time ranges and
+missing-interval counts/examples without filling gaps. The source adapter does not clip target values, fabricate
+availability, resolve unknown normalization, or borrow future measurements.
+An explicit `select_as_of` helper enforces both timestamps at issue time and
+requires the caller to supply the precise January freeze cutoff and inclusive
+convention. Person 3 must decide where integration invokes that helper.
+
+Owned checks completed: 9 data and 9 weather offline unit tests, NOAA original
+48-lead/96-row extraction, cache-only replay, checked small handoff hashes,
+and the unchanged synthetic demo (96 rows) with socket creation blocked. Tests
+do not depend on NOAA access.
+The remaining blockers are the actual SCADA file, confirmed timezone and
+interval convention, observation availability evidence, target normalization,
+source turbine-ID mapping, and the team's issue schedule. The January validation
+and full February coverage ledger are pending those decisions; no performance
+or scored forecast claim is made.
 
 ## Person 1 implementation plan for amoe6a
 
