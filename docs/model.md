@@ -394,3 +394,74 @@ bucket with counts, errors, coverage, widths and interval scores. These generate
 files remain ignored by Git; the code and this documentation are committed.
 
 Measured computation time: 18.28 seconds before rendering; interval calibration for all three methods took 0.56 seconds; peak process memory 192 MiB. No GPU or paid API was used.
+
+## CPU resource and USD estimates (2026-09-23)
+
+`evaluation/benchmark_cost.py` measures eight candidate architectures in separate
+local processes, with two computation threads, on the real cached training data.
+Every forecast contains 48 hours for both turbines. Training timings include a
+single refit on all eligible data; inference is the median of 20 warm calls.
+This benchmark does not update the chosen model or produce new accuracy scores.
+
+| Candidate | Fit, seconds | Features + prediction, seconds | Peak process MiB | Saved model MB |
+|---|---:|---:|---:|---:|
+| Ridge, 7-day context | 0.044 | 0.01350 | 163 | 0.07 |
+| Ridge, 30-day context | 0.016 | 0.00991 | 182 | 0.08 |
+| ExtraTrees, shallow | 1.014 | 0.01809 | 186 | 7.38 |
+| ExtraTrees, deep | 2.014 | 0.01847 | 178 | 17.62 |
+| Histogram gradient boosting | 7.915 | 0.00810 | 338 | 0.24 |
+| Wind ExtraTrees + lookup curve | 1.179 | 0.01919 | 172 | 7.64 |
+| Wind ExtraTrees + smooth curve | 1.170 | 0.01857 | 177 | 7.64 |
+| Selected: individual wind trees → power → mean | 1.039 | 0.03776 | 181 | 7.64 |
+
+Peak memory includes libraries, cached data, training and benchmark machinery;
+it is not an isolated model's minimum RAM requirement. Warm prediction excludes
+CSV reads, process startup, provenance hashing and output formatting. The earlier
+full Predictor benchmark was about 0.169 seconds for both turbines. Short timings
+vary between runs and do not establish that longer-context Ridge is faster.
+
+For transparent cost comparison, use the same illustrative **2 vCPU + 4 GiB**
+allocation for every candidate. The published Linux/x86 US East (N. Virginia)
+example on [AWS Fargate pricing](https://aws.amazon.com/fargate/pricing/) gives
+$0.000011244 per vCPU-second and $0.000001235 per GiB-second, with a 60-second
+minimum per task and durations rounded up to the next second. Thus:
+
+```text
+allocation USD/second = 2 × 0.000011244 + 4 × 0.000001235 = 0.000027428
+task cost = max(60, ceil(startup + runtime)) × allocation USD/second
+monthly compute = 30 forecast tasks + 1 training task
+```
+
+Assuming a 5-second startup, 2 seconds of forecast input preparation and 10 seconds
+of training input preparation, all eight candidates fit within the one-minute
+minimum: **$0.001646 per scheduled task and $0.0510 per 30-day month** for
+30 forecasts plus one refit. With measured work slowed down fivefold, estimates
+remain $0.0510–$0.0520 per month. Daily retraining in a separate task costs about
+$0.0987 per month under the base assumptions. Keeping the same allocation running
+continuously costs **$71.09 per 30 days** for compute alone.
+
+Multiplying only measured feature extraction, prediction and fitting durations by
+these rates gives $0.000009–$0.000224 per month; the selected model is about
+$0.000060. These tiny numbers compare numerical workloads only, not billable
+service totals. The task minimum dominates scheduled compute cost at this scale.
+Accuracy should remain the deciding criterion among these CPU candidates.
+
+These are local Mac timings converted using a cloud price example, **not cloud
+measurements or a quote**. Startup and input preparation are explicit assumptions;
+container image download is unmeasured. Storage, logging, network, public IPv4/NAT,
+scheduling, UI hosting, weather/API fees, taxes and engineering are excluded.
+The same allocation is used for comparability, without claiming that every model
+requires 4 GiB. No paid resources were provisioned or API calls made.
+
+Run after `history_experiment` has created its local cached dataset:
+
+```bash
+PYTHONPATH=src python3 -m wind_forecast.evaluation.benchmark_cost \
+  --experiment src/wind_forecast/models/artifacts/history-48h-v3 \
+  --output src/wind_forecast/models/artifacts/cost-estimate-new
+```
+
+The output directory must be new. `costs.md` contains the comparison;
+`costs.csv` and `costs.json` retain timings, allocation, price sources, assumptions,
+and cost breakdowns. The first measured run is in the ignored local directory
+`src/wind_forecast/models/artifacts/cost-estimate-v1/`.
