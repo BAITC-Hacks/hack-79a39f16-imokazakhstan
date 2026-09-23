@@ -112,8 +112,7 @@ quality; actual 24–48-hour forecast accuracy also depends on weather forecast
 errors and needs a separate historical replay with target measurements.
 
 For an immediate operational review, open **Optional settings** and enable
-**Jev: review the next 3 hours** before generating a real forecast. The shared
-TypeSafe key is included in `typesafe.env`. You can add an **Operator note** in English or
+**Jev: review the next 3 hours** before generating a real forecast. Set `TYPESAFE_API_KEY` in the server environment or ignored `.env`. You can add an **Operator note** in English or
 Russian, select its turbines and declare when it became available and expires.
 Notes must have been known by the forecast issue time. Leave the field blank
 to review just the available measurement and forecast context.

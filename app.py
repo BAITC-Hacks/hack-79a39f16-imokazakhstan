@@ -286,6 +286,7 @@ with st.container(border=True):
             + (
                 "Empirical baseline · learns average power at each wind speed."
                 if baseline
+                else "Saved CatBoost power + ExtraTrees wind, offline." if model_choice == "Local saved models (offline)"
                 else "Configured team model." if team_model
                 else "Gradient boosting ML · learns from wind, temperature and measured power."
             )

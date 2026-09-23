@@ -165,7 +165,7 @@ The controller uses the [Responses API function-calling interface](https://devel
 
 ### Jev: immediate operational review
 
-The shared Jev key is included in `typesafe.env` for this hackathon project.
+Configure Jev with `TYPESAFE_API_KEY` in the server environment or ignored `.env`; no shared credential is distributed.
 You can override it with `TYPESAFE_API_KEY` in the local `.env` or environment.
 Select **Your measurements →
 Optional settings → Jev: review the next 3 hours**. Add an optional operator note

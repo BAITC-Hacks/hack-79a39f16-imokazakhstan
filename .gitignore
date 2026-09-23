@@ -18,3 +18,6 @@ data/processed/**
 !data/processed/.gitkeep
 src/wind_forecast/models/artifacts/**
 !src/wind_forecast/models/artifacts/.gitkeep
+
+# Local credential file; never include service secrets in commits.
+typesafe.env
