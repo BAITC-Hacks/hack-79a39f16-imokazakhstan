@@ -1,10 +1,22 @@
 # WindScope — wind-power forecasting
 
+Проект создан для участия в хакатоне.
+
 WindScope predicts **hourly normalized active power** for two wind turbines,
 24 or 48 hours ahead. The website lets a reviewer run a demo in one click or
 forecast from the organizer's measurements and original archived weather.
 The autonomous cycle retrieves weather, prepares data, trains the model, predicts,
 analyses results and recalculates when the inputs change.
+
+## Local saved wind and power models
+
+The saved CatBoost and ExtraTrees weights are included. For the connected React
+site, install `pip install -e '.[app,local]'`, build `frontend/` with `npm ci && npm run build`,
+and run `PYTHONPATH=src python -m wind_forecast.agent.dashboard` from the repository root.
+Open http://127.0.0.1:8000. Original turbine CSVs belong in `data/raw/` and are not in Git.
+The dashboard opens the honest February 1 archive example, not fabricated current data.
+Streamlit also offers **Local saved models (offline)**. See
+[setup, API, worker and audit limitations](docs/local_integration.md).
 
 ## Run the project
 
@@ -153,7 +165,7 @@ The controller uses the [Responses API function-calling interface](https://devel
 
 ### Jev: immediate operational review
 
-The shared Jev key is included in `typesafe.env` for this hackathon project.
+Configure Jev with `TYPESAFE_API_KEY` in the server environment or ignored `.env`; no shared credential is distributed.
 You can override it with `TYPESAFE_API_KEY` in the local `.env` or environment.
 Select **Your measurements →
 Optional settings → Jev: review the next 3 hours**. Add an optional operator note

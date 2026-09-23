@@ -1,3 +1,10 @@
+# Integration status update
+
+The local SCADA/CatBoost/ExtraTrees adapter is implemented and connected. See
+[local integration](../docs/local_integration.md) for API, launch commands, tested
+behavior and outstanding full-February/container checks. The original handoff below
+is retained as historical design context; its no-adapter statements are superseded.
+
 # Frontend handoff to Person 3
 
 The frontend is an independent React application in `frontend/`. It can be built

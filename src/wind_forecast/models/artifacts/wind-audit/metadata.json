@@ -1,0 +1,9 @@
+{
+  "model_id": "history-wind-extratrees-20260131",
+  "target_units": "m/s",
+  "trained_through": "2026-01-31T19:00:00+00:00",
+  "horizon_hours": 48,
+  "issue_hour_utc_plus_5": 6,
+  "artifact_sha256": "427f3a967dd96df04ab80b3bced21db9d42bdc03d27ce1c33ac306af7cb243d0",
+  "trusted_joblib_only": true
+}

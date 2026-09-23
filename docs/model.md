@@ -1,12 +1,80 @@
-# Forecast model and evaluation
+# Модели Person 2: минимальный локальный комплект
 
-## Person 2 owns
+Оставлены только выбранные модели и код, необходимый для их запуска.
+Локальные модели подключены к React API и Streamlit. См. [запуск и ограничения](local_integration.md).
 
-- Keeping the empirical per-turbine wind-to-power baseline runnable and serializable.
-- Adding a CatBoost challenger only when archived weather covariates are available for both training and replay.
-- Using chronological development/validation splits and freezing choices before the February test.
-- Reporting sample counts and MAE/RMSE by turbine and lead bucket, with the baseline comparison.
+| Назначение | Решение | Локальные веса |
+|---|---|---|
+| Мощность | CatBoost, история обеих турбин, 317 признаков | `src/wind_forecast/models/artifacts/deploy-final/catboost_neighbor.cbm` |
+| Скорость ветра | ExtraTrees, собственная история | `src/wind_forecast/models/artifacts/wind-audit/wind_model.joblib` |
+| Текущий mock/базовый путь сайта | `models/power_curve.py`, EmpiricalPowerCurve | существующий механизм без сети/API |
 
-The included `EmpiricalPowerCurve` is a first wiring baseline. It uses the nearest observed integer wind-speed bin. It is not calibrated or validated on the case dataset. Its demo training data are fabricated, and all demo outputs remain synthetic. Do not claim prediction skill from them.
+Рядом с весами сохранены metadata, единицы, cutoff и SHA-256. Необходимые веса и metadata теперь включены в git. Подготовленная локальная среда:
+`src/wind_forecast/models/artifacts/runtime-env/bin/python`.
+Для отдельной установки: Python 3.11/3.12 и
+`pip install -r src/wind_forecast/models/requirements-deploy.txt`.
+GPU, Torch, Chronos и API-ключи не нужны.
 
-Do not use February SCADA values unless organizers confirm that they become available to the simulated predictor at each issue time. Do not train or validate on future observed weather while claiming operational forecast accuracy. Keep model artifact, feature list, training cutoff, input hash and dependency versions with results.
+## Поведение
+
+Ежедневный выпуск в 06:00 UTC+5, 48 почасовых значений для T1/T2; timestamp указывает
+конец часового интервала. Мощность — средняя за час в исходной шкале 0–1, ветер — м/с.
+Номинальная мощность не подтверждена: перевод в кВт/МВт не выполнять автоматически.
+Мощность прогнозируется напрямую, прогноз ветра — отдельный результат.
+
+Доступные данные: измерения до 06:00 выпуска; подробные лаги и статистики до 30 дней.
+Исходные десятиминутные метки предполагаются началом интервала, полный час — шесть записей.
+Нужны минимум 18 известных часов мощности за последние сутки. Будущие и поздно
+доступные наблюдения исключаются; пропуски нельзя скрывать. Для ежедневных выпусков
+нужны новые факты: замороженного января на весь февраль не хватает.
+
+Финальные веса обучены по `2026-01-31T19:00:00Z`; их нельзя использовать для честного
+backtest более ранних дат. Фактического февраля 2026 в предоставленных данных нет.
+Эмпирические 80% интервалы мощности сохранены в metadata; их необходимо перекалибровывать
+по новым созревшим ошибкам. Покрытие не гарантируется, интервалы широкие.
+
+## Локальный запуск мощности
+
+```bash
+PYTHONPATH=src src/wind_forecast/models/artifacts/runtime-env/bin/python \
+  -m wind_forecast.models.deployment \
+  --model src/wind_forecast/models/artifacts/deploy-final/catboost_neighbor.cbm \
+  --metadata src/wind_forecast/models/artifacts/deploy-final/catboost_neighbor.metadata.json \
+  --csv '/path/to/turbine 1.csv' '/path/to/turbine 2.csv' \
+  --issue '2026-02-01T06:00:00+05:00' --output forecast.json
+```
+
+Сохранённый адаптер: `wind_forecast.models.deployment:load_predictor`.
+Он принимает уже почасовые Observation с UTC timestamps и available_at; повторно
+агрегировать их не нужно. WeatherBundle для самого предиктора не требуется.
+Адаптер подключён через режим local_history; погодные режимы сохранены отдельно.
+
+## Использование ветра
+
+Загружать joblib только из доверенного источника, после проверки SHA-256 по metadata.
+Внутри: `model`, `feature_names`, `trained_through`, `target_units`, `source_sha256`.
+Входная строка для каждой турбины: `np.r_[features(hourly_frame, issue)[0], turbine_index]`,
+где `features` из `models/history.py`, индекс турбины 0 или 1, issue в UTC+5.
+`artifact['model'].predict(feature_matrix)` возвращает `(число турбин, 48)` в м/с.
+При вызове соблюдать cutoff, выпуск 06:00, своевременную доступность исходных данных.
+
+## Результаты и удалённая работа
+
+На 33 263 парах за февраль 2025 — январь 2026:
+
+| Прогноз | RMSE | MAE |
+|---|---:|---:|
+| Мощность CatBoost | 0.335738 | 0.290722 |
+| Ветер ExtraTrees | 3.477819 м/с | 2.882098 м/с |
+
+У предыдущей модели мощности RMSE 0.340804, MAE 0.279409: улучшен RMSE, ухудшен MAE.
+У ветра историческое среднее давало RMSE 3.641736, persistence — 4.670762 м/с.
+Это умеренно точные baseline-модели без будущей погоды. Локальный прогноз мощности
+занимал около 0.015 секунды; веса CatBoost около 1.3 МБ.
+
+[Архив информации о проделанной работе](../src/wind_forecast/evaluation/archive/README.md)
+содержит сравнительные и помесячные метрики, параметры всех 19 конфигураций,
+ограничения, замеры ресурсов, результаты тестов и перечень удалённого.
+Трансформеры, LoRA, промежуточные веса, кеши данных, дубли архивов, экспериментальная
+среда и запускатели удалены локально. Их исходный код доступен в git на `cc5581e`.
+Исходные пользовательские CSV и Brev не затронуты.

@@ -44,6 +44,8 @@ class RunConfig:
     model_path: str = ""
     model_metadata_path: str = ""
     model_kind: str = "auto"
+    wind_model_path: str = ""
+    wind_metadata_path: str = ""
     controller: str = "deterministic"
     jev_enabled: bool = False
     jev_model: str = "jev-1.13.0"
@@ -71,12 +73,16 @@ class RunConfig:
             raise ValueError("reporting_delay_minutes must be a nonnegative integer")
         if self.observation_policy not in {"frozen_jan31", "available"}:
             raise ValueError("observation_policy must be frozen_jan31 or available")
-        if self.weather_source not in {"mock", "bundles", "noaa_gfs", "python"}:
+        if self.weather_source not in {"mock", "bundles", "noaa_gfs", "python", "none"}:
             raise ValueError("weather_source must be mock, bundles, noaa_gfs, or python")
         if self.mode != "fixture" and self.weather_source == "mock":
             raise ValueError("mock weather is only allowed in fixture mode")
         if self.mode == "fixture" and self.weather_source != "mock":
             raise ValueError("fixture mode uses mock weather; use historical/live for real inputs")
+        if self.weather_source == "none" and self.model_kind != "local_history":
+            raise ValueError("No-weather mode requires local_history models")
+        if self.model_kind == "local_history" and (self.mode == "fixture" or self.weather_source != "none"):
+            raise ValueError("local_history requires real observations and weather_source=none")
         if self.controller not in {"deterministic", "openai"}:
             raise ValueError("controller must be deterministic or openai")
         if not isinstance(self.jev_enabled, bool):
@@ -88,7 +94,7 @@ class RunConfig:
         object.__setattr__(self, "operational_notes", tuple(self.operational_notes))
         if self.operational_notes and self.operational_notes_path:
             raise ValueError("provide inline operational_notes or operational_notes_path, not both")
-        if self.model_kind not in {"auto", "gradient_boosting", "empirical"}:
+        if self.model_kind not in {"auto", "gradient_boosting", "empirical", "local_history"}:
             raise ValueError("model_kind must be auto, gradient_boosting, or empirical")
         if self.wind_height_m not in {10, 100}:
             raise ValueError("wind_height_m must be 10 or 100 for the GFS provider")
@@ -130,19 +136,15 @@ class RunConfig:
 
 def runtime_settings() -> dict[str, str]:
     """Load host settings; callers decide which optional services are enabled."""
-    project_typesafe_key = ""
     try:
-        from dotenv import dotenv_values, load_dotenv
+        from dotenv import load_dotenv
         load_dotenv(Path.cwd() / ".env", override=False)
-        project_typesafe_key = dotenv_values(
-            Path(__file__).resolve().parents[3] / "typesafe.env"
-        ).get("TYPESAFE_API_KEY", "") or ""
     except ImportError:
         pass
     return {
         "api_key": os.getenv("OPENAI_API_KEY", ""),
         "model": os.getenv("OPENAI_MODEL", "") or "gpt-4.1-mini",
-        "typesafe_api_key": os.getenv("TYPESAFE_API_KEY", "") or project_typesafe_key,
+        "typesafe_api_key": os.getenv("TYPESAFE_API_KEY", ""),
         "typesafe_model": os.getenv("TYPESAFE_MODEL", "") or "jev-1.13.0",
         "model_factory": os.getenv("WIND_MODEL_FACTORY", ""),
         "model_path": os.getenv("WIND_MODEL_PATH", ""),

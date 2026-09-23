@@ -1,3 +1,22 @@
+# Local integration extension (2026-09-23)
+
+The implemented service is `wind_forecast.agent.dashboard`; see
+[local integration](../docs/local_integration.md). Existing demo and verified-source
+contracts below remain supported. Additional explicit values are:
+
+- `period=date` with required `date=YYYY-MM-DD`; optional `issue` is an aware ISO timestamp.
+- `provenance=local_scada`: original user CSVs plus local forecasts under acknowledged
+  timestamp assumptions, not independently attested weather archives.
+- `status=unknown`: no operational status evidence.
+- Optional `forecast` contains issue/model IDs, horizon and latest observation.
+- Runtime configuration may include `defaultDate` for an explicitly archived start view.
+
+Historical dates are never replaced with today's date. Unknown temperature,
+direction/events are null/empty. Errors never substitute a demo response.
+
+The following original handoff describes the retained base schema; its statements
+that no adapter exists are superseded by the implementation above.
+
 # Dashboard data contract
 
 The React frontend defaults to a deterministic, offline **synthetic demonstration**. All power, temperature, wind, event timing, status, and event energy values in this mode are authored display fixtures. They are not measurements or model results. Coordinates come from `src/wind_forecast/weather/locations.json`; the labels “Demo site 01” and “Demo site 02” do not establish a mapping to real SCADA turbine IDs.

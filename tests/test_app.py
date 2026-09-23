@@ -59,11 +59,12 @@ class ForecastPageTests(TestCase):
         self.assertTrue(self.page.button(key="generate").disabled)
         ack = next(c for c in self.page.checkbox if c.label == "Use these timestamp assumptions")
         ack.check().run()
+        self.page.selectbox(key="model_choice").select("Gradient boosting ML").run()
         self.page.selectbox(key="weather_choice").select("Upload weather file").run()
         self.assertFalse(self.page.exception)
         self.assertTrue(self.page.button(key="generate").disabled)
         self.assertTrue(any("Add a weather JSON" in c.value for c in self.page.caption))
-        self.page.selectbox(key="source_zone").select("Etc/GMT-5").run()
+        self.page.selectbox(key="source_zone").select("UTC").run()
         ack = next(c for c in self.page.checkbox if c.label == "Use these timestamp assumptions")
         self.assertFalse(ack.value)
 

@@ -11,7 +11,7 @@ It supplies no new power values and executes no equipment commands.
 
 ## Enable it on the website
 
-1. Use the shared TypeSafe key included in `typesafe.env`, or override it with
+1. Set your private TypeSafe key in the server environment or ignored `.env` using
    `TYPESAFE_API_KEY` in the host's local `.env` or environment. An OpenAI key
    cannot authenticate to TypeSafe. `TYPESAFE_MODEL` defaults to `jev-1.13.0`.
    Restart Streamlit if you change an already-loaded credential.

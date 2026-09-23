@@ -153,7 +153,7 @@ def run_replay(
             if run.state not in {"completed", "blocked", "failed"}:
                 raise ValueError(f"application returned an unknown state: {run.state}")
             if run.state == "completed":
-                if run.result is None or run.weather is None:
+                if run.result is None or (run.weather is None and config.model_kind != "local_history"):
                     raise ValueError("completed application run lacks a result or weather bundle")
                 model_hash = _model_hash(run.report)
                 for row in run.result.rows:
@@ -167,8 +167,8 @@ def run_replay(
                         "forecast_id": run.result.forecast_id, "model_id": run.result.model_id,
                         "model_hash": model_hash, "input_hash": run.result.input_hash,
                         "weather_bundle_id": run.result.weather_bundle_id,
-                        "weather_source_hash": run.weather.source_hash,
-                        "is_synthetic": run.result.is_synthetic or run.weather.is_synthetic,
+                        "weather_source_hash": run.weather.source_hash if run.weather else "not-used-history-only",
+                        "is_synthetic": run.result.is_synthetic or (run.weather.is_synthetic if run.weather else False),
                     })
             issue_reports.append(report)
         except Exception as exc:
@@ -247,6 +247,16 @@ def run_replay(
         "files": {"rolling": "rolling.csv", "february": "february.csv",
                   "submission": "submission.csv", "configuration": "request.json"},
     }
+    reasons = []
+    if counts["blocked"] or counts["failed"]: reasons.append("One or more forecast issues did not complete")
+    if missing: reasons.append("February turbine-hour coverage is incomplete")
+    if synthetic: reasons.append("Synthetic forecasts cannot be submitted")
+    if not base_config.assumptions_confirmed: reasons.append("Source timestamp assumptions not acknowledged")
+    if any(not row["input_hash"] or not row["model_id"] for row in rows): reasons.append("Missing forecast lineage")
+    summary["submission_check"] = {"ready": not reasons, "reasons": reasons,
+        "note": "Strict data/coverage check; organizer submission schema still requires confirmation"}
+    summary["execution_state"] = summary["state"]
+    if missing and summary["state"] == "completed": summary["state"] = "partial"
     _write_csv(directory / "rolling.csv", rows)
     _write_csv(directory / "february.csv", february)
     _write_csv(directory / "submission.csv", submission)

@@ -1,0 +1,6 @@
+# Compact production path; torch is optional only for the alternative transformer.
+numpy==1.26.4
+pandas==2.3.2
+scipy==1.16.2
+scikit-learn==1.7.2
+catboost==1.2.10

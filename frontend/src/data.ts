@@ -250,13 +250,16 @@ export function validateDashboard(
   payload: unknown,
   period: Period,
   now = new Date(),
+  selectedDate?: string,
 ): DashboardData {
   const data = object(payload, 'response');
   if (data.schemaVersion !== 1) invalid('schemaVersion', 'must equal 1');
-  oneOf(data.provenance, ['synthetic', 'verified_original'], 'provenance');
+  oneOf(data.provenance, ['synthetic', 'verified_original', 'local_scada'], 'provenance');
   if (data.timezone !== DASHBOARD_TIMEZONE) invalid('timezone', `must equal ${DASHBOARD_TIMEZONE}`);
   if (data.period !== period) invalid('period', 'does not match the requested period');
-  const expectedDate = localDate(now, period);
+  if (period === 'date' && (!selectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)))
+    invalid('date', 'explicit archive date required');
+  const expectedDate = period === 'date' ? selectedDate! : localDate(now, period);
   if (data.date !== expectedDate) invalid('date', 'does not match the requested local day');
   const generatedAt = timestamp(data.generatedAt, 'generatedAt');
   if (generatedAt > now.getTime() + 5 * 60_000) invalid('generatedAt', 'is in the future');
@@ -273,7 +276,7 @@ export function validateDashboard(
     if (!site || seenIds.has(id)) invalid(`${path}.id`, 'must be a unique configured site ID');
     seenIds.add(id);
     text(turbine.name, `${path}.name`);
-    oneOf(turbine.status, ['operating', 'attention', 'offline'], `${path}.status`);
+    oneOf(turbine.status, ['operating', 'attention', 'offline', 'unknown'], `${path}.status`);
     const latitude = finite(turbine.latitude, `${path}.latitude`);
     const longitude = finite(turbine.longitude, `${path}.longitude`);
     if (
@@ -351,6 +354,8 @@ export async function loadDashboard(
   period: Period,
   config: RuntimeConfig,
   signal?: AbortSignal,
+  selectedDate?: string,
+  issue?: string,
 ): Promise<DashboardData> {
   if (signal?.aborted) throw signal.reason ?? new DOMException('Request aborted', 'AbortError');
   if (config.dataMode === 'demo') return createDemoDashboard(period);
@@ -366,6 +371,8 @@ export async function loadDashboard(
     throw new Error('The dashboard API endpoint must be an HTTP(S) URL without credentials.');
   }
   url.searchParams.set('period', period);
+  if (period === 'date' && selectedDate) url.searchParams.set('date', selectedDate);
+  if (issue) url.searchParams.set('issue', issue);
   let response: Response;
   try {
     response = await fetch(url.toString(), {
@@ -381,7 +388,16 @@ export async function loadDashboard(
       'Unable to reach the dashboard API. Check the endpoint and network connection.',
     );
   }
-  if (!response.ok) throw new Error(`The dashboard API returned HTTP ${response.status}.`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = await response.json();
+      if (typeof body.error === 'string') detail = ` ${body.error.slice(0, 600)}`;
+    } catch {
+      /* status remains visible */
+    }
+    throw new Error(`The dashboard API returned HTTP ${response.status}.${detail}`);
+  }
   if (!/\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(response.headers.get('content-type') ?? '')) {
     throw new Error('The dashboard API must return JSON (Content-Type: application/json).');
   }
@@ -391,5 +407,5 @@ export async function loadDashboard(
   } catch {
     throw new Error('The dashboard API returned malformed JSON.');
   }
-  return validateDashboard(payload, period);
+  return validateDashboard(payload, period, new Date(), selectedDate);
 }

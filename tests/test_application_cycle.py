@@ -29,7 +29,8 @@ STEPS = ("fetch_weather", "prepare_data", "train_model", "audit_inputs",
 FAKE_KEY = "unit-test-placeholder-never-a-real-api-key"
 
 
-def generated_test_dataset(count=240):
+def generated_test_dataset(count=240, *, synthetic=False):
+    # Default simulates an original-data boundary for temporary workflow tests only.
     rows = []
     for i in range(count):
         time = ISSUE - timedelta(hours=count - i)
@@ -39,7 +40,7 @@ def generated_test_dataset(count=240):
     return {"T1": ObservationDataset(tuple(rows), {
         "source": "Generated service-test measurements; not organizer data",
         "purpose": "temporary integration checks only",
-        "synthetic": True,
+        "synthetic": synthetic,
     })}
 
 
@@ -148,14 +149,14 @@ class ApplicationCycleTests(unittest.TestCase):
                 self.assertNotIn(FAKE_KEY, path.read_text())
         return run, client
 
-    def test_real_mode_contract_runs_ml_and_persists_diagnostics(self):
-        run = run_forecast(self.config(), datasets=generated_test_dataset(),
-                           weather_provider=self.provider)
-        self.assert_complete(run)
-        self.assertEqual(self.provider.fetch_count, 1)
-        self.assertEqual(run.report["controller"]["used"], "deterministic")
-        self.assertFalse(run.report["model"]["trained_on_synthetic"])
-        self.assertTrue(run.report["datasets"]["T1"]["synthetic"])
+    def test_real_mode_rejects_explicitly_synthetic_observations(self):
+        for mode in ("historical", "live"):
+            run = run_forecast(self.config(mode=mode), datasets=generated_test_dataset(synthetic=True),
+                               weather_provider=self.provider)
+            self.assertEqual(run.state, "blocked")
+            self.assertIn("synthetic", run.error)
+            self.assertIsNone(run.result)
+            self.assertFalse((run.run_dir / "forecast.csv").exists())
 
     def test_sparse_history_blocks_explicitly_without_silent_baseline(self):
         run = run_forecast(self.config(), datasets=generated_test_dataset(48),
